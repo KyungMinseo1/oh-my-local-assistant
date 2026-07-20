@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>세션 관리 — Local Assistant</title>
+<style>
+  :root{
+    --bg-deep:#0B0D12;
+    --bg-elevated:#151822;
+    --bg-sunken:#0F1219;
+    --border:#262B3A;
+    --accent:#8FA1FF;
+    --accent-dim:#5D6BB8;
+    --text-primary:#E7E9F0;
+    --text-muted:#8A90A6;
+    --ok:#6EE7B7;
+    --err:#FF8A8A;
+    --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg-deep); color:var(--text-primary);
+    font-family:var(--sans); overflow:hidden;
+  }
+  #root{ display:flex; flex-direction:column; height:100%; }
+
+  #titlebar{
+    -webkit-app-region: drag;
+    padding:10px 14px;
+    background:var(--bg-elevated);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    flex-shrink:0;
+  }
+  #titlebar .title{ font-family:var(--mono); font-size:12px; color:var(--text-muted); }
+  #titlebar .title .caret{ color:var(--accent); }
+  #titlebar .btns{ -webkit-app-region: no-drag; display:flex; align-items:center; gap:2px; }
+  #maximize-btn, #close-btn{
+    background:none; border:none; cursor:pointer; color:var(--text-muted);
+    padding:4px; border-radius:6px; display:flex; align-items:center;
+  }
+  #maximize-btn:hover{ color:var(--text-primary); background:rgba(255,255,255,.07); }
+  #close-btn:hover{ color:var(--text-primary); background:rgba(255,255,255,.07); }
+  #maximize-btn svg, #close-btn svg{ width:14px; height:14px; }
+
+  #tabs{ display:flex; gap:2px; padding:8px 10px 0; background:var(--bg-elevated); border-bottom:1px solid var(--border); flex-shrink:0; }
+  .tab-btn{ background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:12px; font-family:var(--sans); padding:8px 12px; border-bottom:2px solid transparent; }
+  .tab-btn:hover{ color:var(--text-primary); }
+  .tab-btn.active{ color:var(--accent); border-bottom-color:var(--accent); }
+
+  #content{ flex:1; min-height:0; overflow-y:auto; }
+  .tab-pane{ display:none; flex-direction:column; }
+  .tab-pane.active{ display:flex; }
+
+  .action-row{
+    padding:10px 14px; font-size:12px; color:var(--accent); cursor:pointer;
+    display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border);
+  }
+  .action-row:hover{ background:rgba(143,161,255,.08); }
+
+  .session-row{
+    padding:8px 14px; display:flex; align-items:center; gap:8px;
+    cursor:pointer; font-size:12px; color:var(--text-muted);
+    border-left:2px solid transparent;
+  }
+  .session-row:hover{ background:rgba(255,255,255,.04); color:var(--text-primary); }
+  .session-row.active{ border-left-color:var(--accent); color:var(--text-primary); background:rgba(143,161,255,.06); }
+  .session-row .name{ flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .session-row .meta{ font-family:var(--mono); font-size:10px; color:var(--text-muted); flex-shrink:0; }
+  .session-row .proj-select{
+    font-family:var(--mono); font-size:10px; background:var(--bg-deep); color:var(--text-muted);
+    border:1px solid var(--border); border-radius:6px; padding:2px 4px; max-width:90px; flex-shrink:0;
+  }
+  .session-row .del{
+    opacity:0; color:var(--text-muted); flex-shrink:0;
+    background:none; border:none; cursor:pointer; padding:2px; border-radius:4px; display:flex; align-items:center;
+  }
+  .session-row:hover .del{ opacity:1; }
+  .session-row .del:hover{ color:var(--err); }
+  .session-row .del svg{ width:13px; height:13px; }
+
+  #new-project-row{ display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); }
+  #new-project-name{
+    flex:1; min-width:0; background:var(--bg-deep); border:1px solid var(--border);
+    color:var(--text-primary); font-size:12px; padding:6px 8px; border-radius:7px; outline:none;
+  }
+  #new-project-name:focus{ border-color:var(--accent-dim); }
+  #add-project-btn{
+    background:var(--accent); color:#0B0D12; border:none; font-size:11px; font-weight:600;
+    padding:6px 10px; border-radius:7px; cursor:pointer; white-space:nowrap;
+  }
+
+  .project-group{ border-bottom:1px solid var(--border); }
+  .project-header{ display:flex; align-items:center; gap:8px; padding:8px 14px; background:var(--bg-sunken); font-size:11px; color:var(--text-primary); font-weight:600; }
+  .project-header .count{ color:var(--text-muted); font-weight:400; font-family:var(--mono); }
+  .project-header .del-project{ margin-left:auto; opacity:.6; color:var(--text-muted); background:none; border:none; cursor:pointer; padding:2px; display:flex; align-items:center; }
+  .project-header .del-project:hover{ opacity:1; color:var(--err); }
+  .project-header .del-project svg{ width:12px; height:12px; }
+  .project-empty{ padding:6px 14px 10px; font-size:11px; color:var(--text-muted); }
+</style>
+</head>
+<body>
+<div id="root">
+  <div id="titlebar">
+    <div class="title"><span class="caret">›</span> 세션 관리</div>
+    <div class="btns">
+      <button id="maximize-btn" title="최대화">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+      </button>
+      <button id="close-btn" title="닫기">
+        <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="tabs">
+    <button class="tab-btn active" data-tab="all">전체</button>
+    <button class="tab-btn" data-tab="projects">프로젝트</button>
+  </div>
+
+  <div id="content">
+    <div class="tab-pane active" data-tab="all">
+      <div id="new-session-all" class="action-row">
+        <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span>새 세션</span>
+      </div>
+      <div id="all-list"></div>
+    </div>
+
+    <div class="tab-pane" data-tab="projects">
+      <div id="new-project-row">
+        <input id="new-project-name" type="text" placeholder="새 프로젝트 이름" spellcheck="false">
+        <button id="add-project-btn" type="button">+ 추가</button>
+      </div>
+      <div id="project-groups"></div>
+    </div>
+  </div>
+</div>
+<script src="sessions.js"></script>
+</body>
+</html>

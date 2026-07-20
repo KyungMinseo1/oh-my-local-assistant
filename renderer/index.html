@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Local Assistant</title>
+<style>
+  :root{
+    --bg-deep:#0B0D12;
+    --bg-elevated:#151822;
+    --bg-sunken:#0F1219;
+    --bg-bubble-user:#242A3D;
+    --border:#262B3A;
+    --accent:#8FA1FF;
+    --accent-dim:#5D6BB8;
+    --text-primary:#E7E9F0;
+    --text-muted:#8A90A6;
+    --ok:#6EE7B7;
+    --err:#FF8A8A;
+    --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+    --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0;
+    width:100%; height:100%;
+    background:transparent;
+    overflow:hidden;
+    font-family:var(--sans);
+    user-select:none;
+  }
+
+  /* The window spans the whole work area; it's fully click-through except over
+     the bubble and (when open) the panel, both absolutely positioned by JS. */
+  #root{
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+  }
+
+  /* ---- Panel ---- */
+  #panel{
+    position:absolute;
+    width:380px;
+    /* height is set at runtime to fit the available screen space */
+    background:var(--bg-deep);
+    border:1px solid var(--border);
+    border-radius:16px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.6);
+    display:flex;
+    flex-direction:column;
+    overflow:hidden;
+    transform-origin:top left;   /* corner nearest the bubble; set by JS */
+    transform:scale(0.92);
+    opacity:0;
+    pointer-events:none;
+    transition:transform .16s ease, opacity .16s ease;
+  }
+  #panel.open{ transform:scale(1); opacity:1; pointer-events:all; }
+
+  /* Resize grip, placed by JS at the panel's far (growth) corner. */
+  #resize-handle{
+    position:absolute; width:15px; height:15px; z-index:10;
+    touch-action:none;
+  }
+  #resize-handle::after{
+    content:''; position:absolute; inset:4px;
+    border-radius:3px; background:var(--text-muted); opacity:.25;
+    transition:opacity .15s;
+  }
+  #resize-handle:hover::after{ opacity:.6; }
+
+  #header{
+    padding:12px 14px;
+    background:var(--bg-elevated);
+    border-bottom:1px solid var(--border);
+    display:flex; align-items:center; justify-content:space-between;
+    flex-shrink:0;
+  }
+  #header .title{
+    font-family:var(--mono); font-size:11px; color:var(--text-muted);
+    display:flex; align-items:center; gap:6px;
+    overflow:hidden; white-space:nowrap; text-overflow:ellipsis;
+    max-width:240px;
+  }
+  #header .title .caret{ color:var(--accent); }
+  .btns{ display:flex; gap:6px; }
+  .ibtn{
+    background:none; border:none; cursor:pointer; color:var(--text-muted);
+    padding:4px; border-radius:6px; display:flex; align-items:center;
+    transition:color .15s, background .15s;
+  }
+  .ibtn:hover{ color:var(--text-primary); background:rgba(255,255,255,.07); }
+  .ibtn svg{ width:14px; height:14px; }
+  .ibtn.active{ color:var(--accent); }
+
+  /* ---- Context usage bar ---- */
+  #ctx-row{
+    display:flex; align-items:center; gap:8px;
+    padding:6px 14px;
+    background:var(--bg-elevated);
+    border-bottom:1px solid var(--border);
+    font-family:var(--mono); font-size:9.5px; color:var(--text-muted);
+    flex-shrink:0;
+  }
+  #ctx-row.hidden{ display:none; }
+  #ctx-bar-track{ flex:1; height:4px; border-radius:2px; background:var(--bg-sunken); overflow:hidden; }
+  #ctx-bar-fill{ height:100%; width:0%; background:var(--accent); transition:width .2s ease, background .2s ease; }
+  #ctx-bar-fill.warn{ background:#F5C36B; }
+  #ctx-bar-fill.danger{ background:var(--err); }
+  #ctx-text{ white-space:nowrap; flex-shrink:0; }
+
+  /* ---- Session drawer ---- */
+  #sessions{
+    display:none;
+    flex-direction:column;
+    background:var(--bg-sunken);
+    border-bottom:1px solid var(--border);
+    max-height:180px;
+    overflow-y:auto;
+    flex-shrink:0;
+  }
+  #sessions.open{ display:flex; }
+  .session-row{
+    padding:8px 14px;
+    display:flex; align-items:center; gap:8px;
+    cursor:pointer;
+    font-size:12px;
+    color:var(--text-muted);
+    border-left:2px solid transparent;
+  }
+  .session-row:hover{ background:rgba(255,255,255,.04); color:var(--text-primary); }
+  .session-row.active{ border-left-color:var(--accent); color:var(--text-primary); background:rgba(143,161,255,.06); }
+  .session-row .name{ flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .session-row .meta{ font-family:var(--mono); font-size:10px; color:var(--text-muted); }
+  .session-row .del{ opacity:0; color:var(--text-muted); }
+  .session-row:hover .del{ opacity:1; }
+  .session-row .del:hover{ color:var(--err); }
+  #new-session{
+    padding:8px 14px; font-size:12px; color:var(--accent);
+    cursor:pointer; display:flex; align-items:center; gap:6px;
+    border-top:1px solid var(--border);
+    position:sticky; bottom:0; background:var(--bg-sunken);
+  }
+  #new-session:hover{ background:rgba(143,161,255,.08); }
+  .session-row.more{ color:var(--accent); }
+  .session-row.more:hover{ background:rgba(143,161,255,.08); }
+
+  /* ---- Messages ---- */
+  #messages{
+    flex:1; min-height:0; overflow-y:auto; padding:14px;
+    display:flex; flex-direction:column; gap:10px;
+    user-select:text;
+  }
+  #messages::-webkit-scrollbar{ width:6px; }
+  #messages::-webkit-scrollbar-thumb{ background:var(--border); border-radius:3px; }
+  .msg{
+    max-width:86%; padding:9px 12px; border-radius:12px;
+    font-size:13px; line-height:1.55; word-break:break-word;
+  }
+  .msg.user{ align-self:flex-end; background:var(--bg-bubble-user); color:var(--text-primary); border-bottom-right-radius:4px; }
+  .msg.assistant{ align-self:flex-start; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-bottom-left-radius:4px; }
+  .msg.note{ align-self:center; background:none; color:var(--text-muted); font-family:var(--mono); font-size:10px; white-space:pre-wrap; }
+  .msg.usage{ align-self:center; background:none; color:var(--text-muted); font-family:var(--mono); font-size:9.5px; opacity:.75; padding:0 4px; }
+
+  /* Markdown rendered inside .msg.user / .msg.assistant (see renderMarkdown() in app.js) */
+  .msg.user :is(p,ul,ol,pre,blockquote,table,h1,h2,h3,h4,h5,h6),
+  .msg.assistant :is(p,ul,ol,pre,blockquote,table,h1,h2,h3,h4,h5,h6){ margin:0 0 6px; }
+  .msg.user :is(p,ul,ol,pre,blockquote,table,h1,h2,h3,h4,h5,h6):last-child,
+  .msg.assistant :is(p,ul,ol,pre,blockquote,table,h1,h2,h3,h4,h5,h6):last-child{ margin-bottom:0; }
+  .msg.user table, .msg.assistant table{
+    display:block; overflow-x:auto; border-collapse:collapse;
+    width:100%; font-size:.94em;
+  }
+  .msg.user th, .msg.user td, .msg.assistant th, .msg.assistant td{
+    border:1px solid var(--border); padding:4px 8px; text-align:left;
+  }
+  .msg.user th, .msg.assistant th{ background:rgba(255,255,255,.05); font-weight:600; color:var(--text-primary); }
+  .msg.user ul, .msg.user ol, .msg.assistant ul, .msg.assistant ol{ padding-left:20px; }
+  .msg.user li, .msg.assistant li{ margin:2px 0; }
+  .msg.user :is(h1,h2,h3,h4,h5,h6), .msg.assistant :is(h1,h2,h3,h4,h5,h6){ font-size:1em; font-weight:700; }
+  .msg.user code, .msg.assistant code{
+    font-family:var(--mono); font-size:.92em;
+    background:rgba(255,255,255,.08); padding:1px 5px; border-radius:4px;
+  }
+  .msg.user pre, .msg.assistant pre{
+    font-family:var(--mono); font-size:.92em;
+    background:var(--bg-sunken); border:1px solid var(--border);
+    border-radius:8px; padding:8px 10px;
+    white-space:pre-wrap; word-break:break-word;
+  }
+  .msg.user pre code, .msg.assistant pre code{ background:none; padding:0; border-radius:0; }
+  .msg.user blockquote, .msg.assistant blockquote{
+    border-left:2px solid var(--accent-dim); margin:0 0 6px; padding:1px 0 1px 10px; color:var(--text-muted);
+  }
+  .msg.user a, .msg.assistant a{ color:var(--accent); text-decoration:underline; }
+  .msg.user hr, .msg.assistant hr{ border:none; border-top:1px solid var(--border); margin:8px 0; }
+  .msg.tool{
+    align-self:center; max-width:92%;
+    background:var(--bg-sunken); border:1px solid var(--border);
+    color:var(--text-muted); font-family:var(--mono); font-size:10.5px; line-height:1.5;
+    padding:7px 10px; border-radius:8px; white-space:pre-wrap; word-break:break-word;
+  }
+  .msg.tool .tool-head{ color:var(--accent); }
+  .msg.reasoning{
+    align-self:flex-start; max-width:86%; flex-shrink:0;
+    background:var(--bg-sunken); border:1px solid var(--border);
+    border-radius:10px; overflow:hidden;
+  }
+  .msg.reasoning .r-head{
+    display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+    padding:7px 10px; font-family:var(--mono); font-size:10.5px; color:var(--text-muted);
+  }
+  .msg.reasoning .r-head .caret{ display:inline-block; transition:transform .15s; }
+  .msg.reasoning.open .r-head .caret{ transform:rotate(90deg); }
+  .msg.reasoning:not([data-done]) .r-label{ animation:think 1.4s ease-in-out infinite; }
+  @keyframes think{ 0%,100%{ opacity:1; } 50%{ opacity:.45; } }
+  .msg.reasoning .r-body{
+    display:none; padding:7px 10px 9px;
+    font-family:var(--mono); font-size:10.5px; line-height:1.5;
+    color:var(--text-muted); white-space:pre-wrap; word-break:break-word;
+    border-top:1px solid var(--border);
+  }
+  .msg.reasoning.open .r-body{ display:block; }
+  .msg.tool-confirm{
+    align-self:center; max-width:92%;
+    background:var(--bg-elevated); border:1px solid var(--accent-dim);
+    color:var(--text-primary); font-family:var(--mono); font-size:11px;
+    padding:9px 10px; border-radius:8px;
+    display:flex; flex-direction:column; gap:7px;
+  }
+  .msg.tool-confirm .args{ color:var(--text-muted); font-size:10px; white-space:pre-wrap; word-break:break-word; }
+  .msg.tool-confirm .confirm-btns{ display:flex; gap:6px; justify-content:flex-end; }
+  .msg.tool-confirm button{
+    font-family:var(--mono); font-size:10px; font-weight:600; padding:5px 11px;
+    border-radius:6px; border:none; cursor:pointer;
+  }
+  .msg.tool-confirm .approve{ background:var(--accent); color:#0B0D12; }
+  .msg.tool-confirm .deny{ background:var(--err); color:#0B0D12; }
+  .msg.tool-confirm button:disabled{ opacity:.5; cursor:default; }
+  .empty{
+    margin:auto; text-align:center; color:var(--text-muted);
+    font-family:var(--mono); font-size:11px; line-height:1.8;
+  }
+  .empty .caret{ color:var(--accent); }
+  .caret-blink{
+    display:inline-block; width:6px; height:13px;
+    background:var(--accent); vertical-align:text-bottom;
+    animation:blink 1s steps(2) infinite;
+  }
+  @keyframes blink{ 0%,50%{opacity:1;} 51%,100%{opacity:0;} }
+
+  /* ---- Composer ---- */
+  #composer{
+    border-top:1px solid var(--border); background:var(--bg-elevated);
+    padding:10px; display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
+  }
+  #input{
+    flex:1; resize:none; background:var(--bg-deep);
+    border:1px solid var(--border); color:var(--text-primary);
+    font-family:var(--sans); font-size:13px; padding:9px 11px;
+    border-radius:10px; outline:none; max-height:110px; line-height:1.45;
+    user-select:text; overflow-y:hidden;
+  }
+  #input:focus{ border-color:var(--accent-dim); }
+  #action{
+    width:34px; height:34px; border-radius:9px; border:none;
+    background:var(--accent); cursor:pointer; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+    transition:background .15s, transform .1s;
+  }
+  #action:active{ transform:scale(.94); }
+  #action:disabled{ opacity:.35; cursor:default; }
+  #action svg{ width:14px; height:14px; stroke:#0B0D12; fill:none; }
+  #action.stopping{ background:var(--err); }
+  #action.stopping svg{ fill:#0B0D12; stroke:none; }
+
+  /* ---- Bubble ---- */
+  #bubble{
+    width:54px; height:54px; border-radius:50%;
+    background:var(--bg-elevated); border:1px solid var(--border);
+    box-shadow:0 8px 24px rgba(0,0,0,.5);
+    cursor:grab; position:absolute;
+    display:flex; align-items:center; justify-content:center;
+    pointer-events:all; touch-action:none;
+    transition:transform .16s ease, box-shadow .16s ease;
+  }
+  #bubble:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.6); }
+  #bubble.dragging{ cursor:grabbing; transform:none; transition:none; box-shadow:0 14px 32px rgba(0,0,0,.7); }
+  #bubble svg{ width:21px; height:21px; stroke:var(--accent); fill:none; }
+  #dot{
+    position:absolute; top:5px; right:5px;
+    width:8px; height:8px; border-radius:50%;
+    background:var(--err); box-shadow:0 0 0 2px var(--bg-elevated);
+  }
+  #dot.on{ background:var(--ok); }
+  #dot.busy{ background:var(--accent); animation:pulse 1.2s infinite; }
+  @keyframes pulse{
+    0%{ box-shadow:0 0 0 2px var(--bg-elevated), 0 0 0 0 rgba(143,161,255,.5); }
+    70%{ box-shadow:0 0 0 2px var(--bg-elevated), 0 0 0 7px rgba(143,161,255,0); }
+    100%{ box-shadow:0 0 0 2px var(--bg-elevated), 0 0 0 0 rgba(143,161,255,0); }
+  }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <div id="panel">
+    <div id="header">
+      <div class="title"><span class="caret">›</span><span id="endpoint-label">127.0.0.1:8080</span></div>
+      <div class="btns">
+        <button class="ibtn" id="sessions-btn" title="세션 목록">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
+        </button>
+        <button class="ibtn" id="settings-btn" title="설정">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <button class="ibtn" id="close-btn" title="닫기">
+          <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="ctx-row" class="hidden">
+      <div id="ctx-bar-track"><div id="ctx-bar-fill"></div></div>
+      <span id="ctx-text"></span>
+    </div>
+
+    <div id="sessions"></div>
+
+    <div id="messages"></div>
+
+    <div id="composer">
+      <textarea id="input" rows="1" placeholder="메시지 입력..."></textarea>
+      <button id="action" title="전송">
+        <svg id="action-icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+      </button>
+    </div>
+
+    <div id="resize-handle" title="크기 조절"></div>
+  </div>
+
+  <div id="bubble" title="Local Assistant">
+    <span id="dot"></span>
+    <svg viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+    </svg>
+  </div>
+
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
