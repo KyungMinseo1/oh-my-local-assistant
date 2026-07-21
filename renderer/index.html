@@ -253,8 +253,46 @@
   /* ---- Composer ---- */
   #composer{
     border-top:1px solid var(--border); background:var(--bg-elevated);
-    padding:10px; display:flex; gap:8px; align-items:flex-end; flex-shrink:0;
+    padding:8px 10px 10px; display:flex; flex-direction:column; gap:6px; flex-shrink:0;
   }
+  #composer-row{ display:flex; gap:8px; align-items:flex-end; }
+
+  /* Preset picker: a small pill above the input, like a model/persona
+     switcher in a typical chat product — opens a popup menu upward since
+     the composer sits at the bottom of the panel. */
+  #composer-top{ position:relative; display:flex; }
+  #preset-btn{
+    display:flex; align-items:center; gap:5px;
+    background:var(--bg-sunken); border:1px solid var(--border); color:var(--text-muted);
+    font-family:var(--sans); font-size:11px; font-weight:500;
+    padding:5px 9px; border-radius:20px; cursor:pointer;
+    max-width:180px; transition:border-color .15s, color .15s, background .15s;
+  }
+  #preset-btn:hover{ border-color:var(--accent-dim); color:var(--text-primary); }
+  #preset-btn.open{ border-color:var(--accent); color:var(--text-primary); background:rgba(143,161,255,.08); }
+  #preset-btn .label{ overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  #preset-btn .chev{ width:10px; height:10px; flex-shrink:0; color:var(--accent); transition:transform .15s; }
+  #preset-btn.open .chev{ transform:rotate(180deg); }
+
+  #preset-menu{
+    position:absolute; bottom:calc(100% + 6px); left:0; z-index:20;
+    min-width:170px; max-width:240px; max-height:220px; overflow-y:auto;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 12px 32px rgba(0,0,0,.5);
+    padding:4px; display:none; flex-direction:column; gap:1px;
+  }
+  #preset-menu.open{ display:flex; }
+  .preset-opt{
+    display:flex; align-items:center; gap:6px;
+    padding:7px 8px; border-radius:7px; cursor:pointer;
+    font-size:12px; color:var(--text-primary);
+  }
+  .preset-opt:hover{ background:rgba(255,255,255,.06); }
+  .preset-opt.active{ color:var(--accent); background:rgba(143,161,255,.1); }
+  .preset-opt .name{ flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+  .preset-opt .check{ width:12px; height:12px; flex-shrink:0; visibility:hidden; }
+  .preset-opt.active .check{ visibility:visible; }
+
   #input{
     flex:1; resize:none; background:var(--bg-deep);
     border:1px solid var(--border); color:var(--text-primary);
@@ -331,10 +369,19 @@
     <div id="messages"></div>
 
     <div id="composer">
-      <textarea id="input" rows="1" data-i18n-placeholder="placeholderInput"></textarea>
-      <button id="action" data-i18n-title="titleSend">
-        <svg id="action-icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-      </button>
+      <div id="composer-top">
+        <button id="preset-btn" type="button" data-i18n-title="titlePresetSelect">
+          <span class="label" id="preset-btn-label"></span>
+          <svg class="chev" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div id="preset-menu"></div>
+      </div>
+      <div id="composer-row">
+        <textarea id="input" rows="1" data-i18n-placeholder="placeholderInput"></textarea>
+        <button id="action" data-i18n-title="titleSend">
+          <svg id="action-icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
     </div>
 
     <div id="resize-handle" data-i18n-title="titleResize"></div>

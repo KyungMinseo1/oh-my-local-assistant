@@ -155,6 +155,28 @@
   .mcp-status-row.ok{ color:var(--ok); }
   .mcp-status-row.err{ color:var(--err); }
 
+  #presets-list{ display:flex; flex-direction:column; gap:8px; }
+  .preset-row{
+    background:var(--bg-deep); border:1px solid var(--border); border-radius:8px;
+    padding:8px; display:flex; flex-direction:column; gap:6px;
+  }
+  .preset-row-head{ display:flex; align-items:center; gap:6px; }
+  .preset-row-head .preset-name{ flex:1; min-width:0; }
+  .preset-row .del-preset{
+    flex-shrink:0; color:var(--text-muted); background:none; border:none;
+    cursor:pointer; padding:4px; border-radius:6px; display:flex; align-items:center;
+  }
+  .preset-row .del-preset:hover{ color:var(--err); background:rgba(255,255,255,.07); }
+  .preset-row .del-preset svg{ width:13px; height:13px; }
+  .preset-row .preset-prompt{ min-height:44px; }
+  .preset-empty{ font-size:11px; color:var(--text-muted); padding:2px 0; }
+  .preset-add-row{ display:flex; gap:6px; }
+  .preset-add-row input{ flex:1; min-width:0; }
+  #add-preset-btn{
+    background:var(--accent); color:#0B0D12; border:none; font-size:11px; font-weight:600;
+    padding:7px 12px; border-radius:7px; cursor:pointer; white-space:nowrap;
+  }
+
   #footer{
     flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border);
     background:var(--bg-elevated); display:flex; align-items:center; justify-content:flex-end; gap:8px;
@@ -211,7 +233,14 @@
       <div class="pane" data-cat="system">
         <h2 data-i18n="paneSystemH2"></h2>
         <label for="system-prompt" data-i18n="labelSystemPrompt"></label>
-        <textarea id="system-prompt" rows="10" data-i18n-placeholder="placeholderSystemPrompt" spellcheck="false"></textarea>
+        <textarea id="system-prompt" rows="6" data-i18n-placeholder="placeholderSystemPrompt" spellcheck="false"></textarea>
+
+        <label data-i18n="labelPresets"></label>
+        <div id="presets-list"></div>
+        <div class="preset-add-row">
+          <input id="new-preset-name" type="text" data-i18n-placeholder="placeholderNewPreset" spellcheck="false">
+          <button id="add-preset-btn" type="button" data-i18n="btnAddPreset"></button>
+        </div>
       </div>
 
       <div class="pane" data-cat="workspace">

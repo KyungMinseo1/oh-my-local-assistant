@@ -18,6 +18,7 @@
   const maxToolRoundsInput = $('max-tool-rounds');
   const languageSelect = $('language');
   const systemPromptInput = $('system-prompt');
+  const presetsListEl = $('presets-list'), newPresetNameInput = $('new-preset-name'), addPresetBtn = $('add-preset-btn');
   const workspacePathInput = $('workspace-path'), pickWorkspaceBtn = $('pick-workspace'), toolsListEl = $('tools-list');
   const mcpServersInput = $('mcp-servers'), mcpStatusEl = $('mcp-status'), mcpErrorEl = $('mcp-error'), mcpToolsListEl = $('mcp-tools-list');
   const saveBtn = $('save-settings'), saveStatusEl = $('save-status'), closeBtn = $('close-btn');
@@ -26,6 +27,7 @@
   let settings = null;
   let mcpToolList = [];   // raw window.host.listMcpTools() shape: [{server,name,toolName,description,inputSchema,error?}]
   let connectingServers = new Set();   // server names whose (re)connect attempt hasn't settled yet — see onMcpStatusChanged
+  let presets = [];   // named system-prompt presets a session can pick instead of the global default
 
   function ensureToolDefaults() {
     if (!settings.tools) settings.tools = {};
@@ -243,6 +245,67 @@
   }
   attachSmartIndent(mcpServersInput);
 
+  // ---- system prompt presets -------------------------------------------------
+  // Each preset is its own name+prompt pair a session can pick in the main
+  // widget's header instead of the global default above. Name/prompt edits
+  // save on blur (immediately, like the workspace picker) rather than waiting
+  // for the footer "저장" button, so they behave like the project list in the
+  // session-manager window.
+  function renderPresetsList() {
+    presetsListEl.innerHTML = '';
+    if (!presets.length) {
+      const e = document.createElement('div');
+      e.className = 'preset-empty';
+      e.textContent = t('noPresets');
+      presetsListEl.appendChild(e);
+      return;
+    }
+    presets.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'preset-row';
+      row.innerHTML = `
+        <div class="preset-row-head">
+          <input class="preset-name" type="text" spellcheck="false">
+          <button class="del-preset" type="button" title="${t('delete')}">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <textarea class="preset-prompt" rows="4" spellcheck="false"></textarea>`;
+      const nameInput = row.querySelector('.preset-name');
+      const promptInput = row.querySelector('.preset-prompt');
+      nameInput.value = p.name;
+      promptInput.value = p.prompt;
+      nameInput.addEventListener('blur', () => {
+        const name = nameInput.value.trim();
+        if (!name || name === p.name) { nameInput.value = p.name; return; }
+        p.name = name;
+        window.host.updatePreset(p.id, { name });
+      });
+      promptInput.addEventListener('blur', () => {
+        if (promptInput.value === p.prompt) return;
+        p.prompt = promptInput.value;
+        window.host.updatePreset(p.id, { prompt: p.prompt });
+      });
+      row.querySelector('.del-preset').addEventListener('click', async () => {
+        await window.host.deletePreset(p.id);
+        presets = presets.filter(x => x.id !== p.id);
+        renderPresetsList();
+      });
+      presetsListEl.appendChild(row);
+    });
+  }
+
+  async function addPreset() {
+    const name = newPresetNameInput.value.trim();
+    if (!name) return;
+    const p = await window.host.createPreset(name, '');
+    presets.push(p);
+    newPresetNameInput.value = '';
+    renderPresetsList();
+  }
+  addPresetBtn.addEventListener('click', addPreset);
+  newPresetNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addPreset(); });
+
   function populateFields() {
     baseUrlInput.value = settings.baseUrl || DEFAULT_BASE;
     modelInput.value = settings.model || '';
@@ -315,6 +378,7 @@
     renderToolsList();
     renderMcpToolsList();
     renderMcpStatus();
+    renderPresetsList();
   });
 
   // Applies immediately (native picker), like the other checkboxes here —
@@ -372,6 +436,7 @@
 
     mcpToolList = await window.host.listMcpTools();
     ensureToolDefaults();
+    presets = await window.host.listPresets();
 
     window.I18N.setLang(settings.language || 'ko');
     window.I18N.applyDom(document);
@@ -380,6 +445,7 @@
     renderToolsList();
     renderMcpToolsList();
     renderMcpStatus();
+    renderPresetsList();
     showCategory('general');
   })();
 })();

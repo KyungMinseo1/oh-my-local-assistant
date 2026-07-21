@@ -57,6 +57,10 @@ ipcMain.handle('session:setProject', (e, id, projectId) => {
   db.setSessionProject(id, projectId);
   broadcastChange(e.sender, { scope: 'session', id });
 });
+ipcMain.handle('session:setPreset', (e, id, presetId) => {
+  db.setSessionPreset(id, presetId);
+  broadcastChange(e.sender, { scope: 'session', id });
+});
 ipcMain.handle('session:appendMessage', (e, id, message) => {
   const result = db.appendMessage(id, message);
   broadcastChange(e.sender, { scope: 'session', id });
@@ -80,6 +84,21 @@ ipcMain.handle('project:create', (e, name) => {
 ipcMain.handle('project:delete', (e, id) => {
   db.deleteProject(id);
   broadcastChange(e.sender, { scope: 'project' });
+});
+
+ipcMain.handle('preset:list', () => db.listPresets());
+ipcMain.handle('preset:create', (e, name, prompt) => {
+  const preset = db.createPreset(name, prompt);
+  broadcastChange(e.sender, { scope: 'preset' });
+  return preset;
+});
+ipcMain.handle('preset:update', (e, id, partial) => {
+  db.updatePreset(id, partial || {});
+  broadcastChange(e.sender, { scope: 'preset' });
+});
+ipcMain.handle('preset:delete', (e, id) => {
+  db.deletePreset(id);
+  broadcastChange(e.sender, { scope: 'preset' });
 });
 
 ipcMain.handle('db:path', () => db.dbPath());
@@ -237,6 +256,7 @@ const MCP_PREFIX = 'mcp__';
 const mcpClients = new Map();    // server name -> { client, tools, error }
 const mcpToolIndex = new Map();  // qualified name -> { server, toolName }
 const mcpConnecting = new Set(); // server names whose connect attempt hasn't settled yet
+const mcpConfigs = new Map();    // server name -> JSON.stringify(cfg) it's currently connected/attempted with
 
 async function connectMcpServer(name, cfg) {
   try {
@@ -296,19 +316,38 @@ function broadcastMcpStatus() {
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send('mcp:statusChanged', payload);
 }
 
-// Small server counts make a full disconnect-all/reconnect-all simpler and
-// safer than diffing — mirrors the "not worth the complexity yet" approach
-// already used for session-store writes above. Each server's connect result
-// is broadcast as soon as it settles rather than waiting for the whole batch,
-// so a slow server (e.g. a first-run `npx` package fetch) doesn't leave every
-// other already-connected server looking like it never showed up.
+// Diffed against the currently connected set rather than a full disconnect-
+// all/reconnect-all: settings are saved as one blob (see settings.js), so a
+// save with no MCP changes would otherwise restart every server — dropping
+// live stdio processes and tool state — just because the user tweaked an
+// unrelated field. A server is only (re)connected if it's new, its config
+// changed, or it isn't currently healthy (never connected / previously
+// errored); a server removed from the config is disconnected. Each server's
+// result is still broadcast as soon as it settles rather than waiting for
+// the whole batch, so a slow server (e.g. a first-run `npx` package fetch)
+// doesn't leave every other already-connected server looking like it never
+// showed up.
 async function syncMcpServers(mcpServers) {
-  await Promise.all([...mcpClients.keys()].map(disconnectMcpServer));
   const entries = Object.entries(mcpServers || {});
-  entries.forEach(([name]) => mcpConnecting.add(name));
+  const nextNames = new Set(entries.map(([name]) => name));
+
+  await Promise.all([...mcpClients.keys()].filter(name => !nextNames.has(name)).map(name => {
+    mcpConfigs.delete(name);
+    return disconnectMcpServer(name);
+  }));
+
+  const toConnect = entries.filter(([name, cfg]) => {
+    const existing = mcpClients.get(name);
+    const unhealthy = !existing || !existing.client;
+    return unhealthy || mcpConfigs.get(name) !== JSON.stringify(cfg);
+  });
+
+  toConnect.forEach(([name]) => mcpConnecting.add(name));
   broadcastMcpStatus();
-  await Promise.all(entries.map(async ([name, cfg]) => {
+  await Promise.all(toConnect.map(async ([name, cfg]) => {
+    await disconnectMcpServer(name);   // drop a stale connection for this name before reconnecting
     await connectMcpServer(name, cfg);
+    mcpConfigs.set(name, JSON.stringify(cfg));
     mcpConnecting.delete(name);
     broadcastMcpStatus();
   }));

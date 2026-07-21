@@ -10,6 +10,7 @@
   const sessionsEl = $('sessions'), sessionsBtn = $('sessions-btn');
   const settingsBtn = $('settings-btn');
   const endpointLabel = $('endpoint-label');
+  const presetBtn = $('preset-btn'), presetBtnLabel = $('preset-btn-label'), presetMenu = $('preset-menu');
   const messagesEl = $('messages'), inputEl = $('input'), actionBtn = $('action'), actionIcon = $('action-icon');
   const closeBtn = $('close-btn'), resizeHandle = $('resize-handle');
   const ctxRow = $('ctx-row'), ctxFill = $('ctx-bar-fill'), ctxText = $('ctx-text');
@@ -161,6 +162,7 @@
   let settings = { baseUrl: DEFAULT_BASE, model: '' };
   let sessionList = [];   // metadata only: {id, title, created, updated, projectId} — feeds the drawer
   let session = null;     // the currently open session, full detail incl. messages
+  let presetList = [];    // named system-prompt presets, managed in the settings window
   let isOpen = false;
   let controller = null;   // AbortController for the in-flight request
   let pendingConfirmResolve = null;   // resolves the current tool-approval prompt, if any
@@ -284,6 +286,7 @@
       window.host.setActiveSession(settings.activeId);
     }
     session = await window.host.getSession(settings.activeId);
+    presetList = await window.host.listPresets();
     resetContextUsage();
   }
 
@@ -305,7 +308,7 @@
     settings.activeId = s.id;
     session = s;
     resetContextUsage();
-    if (render) { renderSessions(); renderMessages(); }
+    if (render) { renderSessions(); renderMessages(); renderPresetSelect(); }
     return s;
   }
 
@@ -316,7 +319,7 @@
     settings.activeId = activeId;
     session = await window.host.getSession(activeId);
     resetContextUsage();
-    renderSessions(); renderMessages();
+    renderSessions(); renderMessages(); renderPresetSelect();
   }
 
   // Title is derived from the first user message: no naming prompt to dismiss,
@@ -363,7 +366,7 @@
         window.host.setActiveSession(s.id);
         session = await window.host.getSession(s.id);
         resetContextUsage();
-        renderSessions(); renderMessages();
+        renderSessions(); renderMessages(); renderPresetSelect();
       });
       row.querySelector('.del').addEventListener('click', (e) => {
         e.stopPropagation(); deleteSession(s.id);
@@ -697,6 +700,61 @@
     } catch { endpointLabel.textContent = settings.baseUrl; }
   }
 
+  // Lets the current session pick a named system-prompt preset (managed in
+  // Settings → 시스템 프롬프트) instead of the global default — apiMessages()
+  // reads session.presetId at request time. Rendered as a pill button next to
+  // the composer (like a model/persona switcher) that opens a small popup
+  // menu upward, rather than a native <select>.
+  const CHECK_ICON = '<path d="M5 13l4 4L19 7"/>';
+  function activePresetId() {
+    return (session && presetList.some(p => p.id === session.presetId)) ? session.presetId : '';
+  }
+
+  function closePresetMenu() {
+    presetMenu.classList.remove('open');
+    presetBtn.classList.remove('open');
+  }
+
+  function selectPreset(presetId) {
+    if (!session) return;
+    session.presetId = presetId || null;
+    window.host.setSessionPreset(session.id, session.presetId);
+    renderPresetSelect();
+    closePresetMenu();
+  }
+
+  function renderPresetMenu() {
+    presetMenu.innerHTML = '';
+    const active = activePresetId();
+    const options = [{ id: '', name: tr('presetDefault') }, ...presetList];
+    options.forEach(p => {
+      const row = document.createElement('div');
+      row.className = 'preset-opt' + (p.id === active ? ' active' : '');
+      row.innerHTML = `<svg class="check" viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">${CHECK_ICON}</svg><span class="name"></span>`;
+      row.querySelector('.name').textContent = p.name;
+      row.addEventListener('click', () => selectPreset(p.id));
+      presetMenu.appendChild(row);
+    });
+  }
+
+  function renderPresetSelect() {
+    const active = activePresetId();
+    const activePreset = presetList.find(p => p.id === active);
+    presetBtnLabel.textContent = activePreset ? activePreset.name : tr('presetDefault');
+    renderPresetMenu();
+  }
+
+  presetBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opening = !presetMenu.classList.contains('open');
+    if (opening) renderPresetMenu();
+    presetMenu.classList.toggle('open', opening);
+    presetBtn.classList.toggle('open', opening);
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#composer-top')) closePresetMenu();
+  });
+
   // ---- context / token usage ------------------------------------------------
   // llama.cpp's non-OpenAI /props endpoint exposes the server's -c value, but
   // the exact shape has shifted across versions (top-level n_ctx vs nested
@@ -898,7 +956,8 @@
       return { role: m.role, content: m.content };
     });
     const parts = [];
-    const sys = (settings.systemPrompt || '').trim();
+    const preset = s.presetId ? presetList.find(p => p.id === s.presetId) : null;
+    const sys = (preset ? preset.prompt : settings.systemPrompt || '').trim();
     if (sys) parts.push(sys);
     if (toolsActive) parts.push(TOOL_CALL_FORMAT_REMINDER);
     return parts.length ? [{ role: 'system', content: parts.join('\n\n') }, ...msgs] : msgs;
@@ -1300,6 +1359,11 @@
     panel.classList.toggle('open', isOpen);
     if (isOpen) { ping(); inputEl.focus(); }
     else { sessionsEl.classList.remove('open'); }
+    // The panel's bounds just shrank/grew; the cursor may now sit in what used
+    // to be (or has become) dead space. Re-run the hit test immediately rather
+    // than waiting for the next mousemove, or clicks/scrolls there get eaten
+    // by the click-through window until the cursor happens to move again.
+    syncClickThrough();
   }
 
   // Stored as a fraction of the window so it survives resolution changes.
@@ -1400,13 +1464,18 @@
     });
   }
   let ignoring = true;
-  document.addEventListener('mousemove', (e) => {
-    if (dragging || resizing) return;         // never toggle click-through mid-drag/resize
-    const over = hitTest(e.clientX, e.clientY);
+  let lastMouseX = -1, lastMouseY = -1;
+  function syncClickThrough() {
+    if (dragging || resizing) return;          // never toggle click-through mid-drag/resize
+    const over = hitTest(lastMouseX, lastMouseY);
     if (over === ignoring) {
       ignoring = !over;
       window.host.setIgnoreMouse(ignoring);
     }
+  }
+  document.addEventListener('mousemove', (e) => {
+    lastMouseX = e.clientX; lastMouseY = e.clientY;
+    syncClickThrough();
   });
 
   // ---- events -------------------------------------------------------------
@@ -1468,6 +1537,11 @@
   // just the slice of state a given change actually touched.
   if (window.host.onStoreChanged) {
     window.host.onStoreChanged(async (info) => {
+      if (info?.scope === 'preset') {
+        presetList = await window.host.listPresets();
+        renderPresetSelect();
+        return;
+      }
       if (info?.scope === 'settings') {
         const prevActiveId = settings.activeId;
         const prevLang = settings.language;
@@ -1487,6 +1561,7 @@
         if (settings.activeId !== prevActiveId || langChanged) {
           renderSessions();
           renderMessages();
+          renderPresetSelect();
         }
         return;
       }
@@ -1495,6 +1570,7 @@
         session = await window.host.getSession(settings.activeId);
         resetContextUsage();
         renderMessages();
+        renderPresetSelect();
       }
       renderSessions();
     });
@@ -1508,6 +1584,7 @@
     renderEndpoint();
     renderSessions();
     renderMessages();
+    renderPresetSelect();
     autoResize();
     ping();
     setInterval(ping, 30000);

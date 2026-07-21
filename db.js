@@ -46,7 +46,14 @@ function createSchema() {
       title TEXT NOT NULL,
       created INTEGER NOT NULL,
       updated INTEGER NOT NULL,
-      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL
+      project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
+      preset_id TEXT REFERENCES presets(id) ON DELETE SET NULL
+    );
+    CREATE TABLE IF NOT EXISTS presets (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      created INTEGER NOT NULL
     );
     CREATE TABLE IF NOT EXISTS messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,6 +114,15 @@ function migrateFromJson(userDataDir) {
   try { fs.renameSync(jsonFile, jsonFile + '.bak'); } catch (e) { console.error('Failed to rename legacy sessions.json after migration:', e); }
 }
 
+// Adds the preset_id column to a sessions table that predates presets
+// (CREATE TABLE IF NOT EXISTS above only applies to brand new DBs).
+function ensurePresetColumn() {
+  const cols = db.prepare('PRAGMA table_info(sessions)').all();
+  if (!cols.some(c => c.name === 'preset_id')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN preset_id TEXT REFERENCES presets(id) ON DELETE SET NULL');
+  }
+}
+
 // One-time backfill adding a "[yyyy-mm-dd] " prefix (from each session's
 // `created` timestamp) to titles that predate that convention.
 function migrateDateTags() {
@@ -135,6 +151,7 @@ function init(userDataDir) {
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   createSchema();
+  ensurePresetColumn();
   if (isNew) migrateFromJson(userDataDir);
   migrateDateTags();
 }
@@ -172,7 +189,7 @@ function rowToMessage(r) {
 }
 
 function getSession(id) {
-  const s = db.prepare('SELECT id, title, created, updated, project_id AS projectId FROM sessions WHERE id = ?').get(id);
+  const s = db.prepare('SELECT id, title, created, updated, project_id AS projectId, preset_id AS presetId FROM sessions WHERE id = ?').get(id);
   if (!s) return null;
   const rows = db.prepare('SELECT role, content, tool_calls, tool_call_id FROM messages WHERE session_id = ? ORDER BY seq ASC').all(id);
   s.messages = rows.map(rowToMessage);
@@ -206,6 +223,10 @@ function renameSession(id, title) {
 
 function setSessionProject(id, projectId) {
   db.prepare('UPDATE sessions SET project_id = ? WHERE id = ?').run(projectId || null, id);
+}
+
+function setSessionPreset(id, presetId) {
+  db.prepare('UPDATE sessions SET preset_id = ? WHERE id = ?').run(presetId || null, id);
 }
 
 // Inserts one message row and bumps the session's updated timestamp.
@@ -250,9 +271,38 @@ function deleteProject(id) {
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
 }
 
+// ---- system prompt presets ----------------------------------------------
+function listPresets() {
+  return db.prepare('SELECT id, name, prompt, created FROM presets ORDER BY created ASC').all();
+}
+
+function createPreset(name, prompt) {
+  const id = newId('preset');
+  const created = Date.now();
+  db.prepare('INSERT INTO presets (id, name, prompt, created) VALUES (?, ?, ?, ?)').run(id, name, prompt, created);
+  return { id, name, prompt, created };
+}
+
+function updatePreset(id, { name, prompt } = {}) {
+  const cur = db.prepare('SELECT name, prompt FROM presets WHERE id = ?').get(id);
+  if (!cur) return;
+  db.prepare('UPDATE presets SET name = ?, prompt = ? WHERE id = ?').run(
+    name !== undefined ? name : cur.name,
+    prompt !== undefined ? prompt : cur.prompt,
+    id
+  );
+}
+
+// Non-destructive: sessions using it just lose their presetId (ON DELETE SET
+// NULL), falling back to the global default system prompt.
+function deletePreset(id) {
+  db.prepare('DELETE FROM presets WHERE id = ?').run(id);
+}
+
 module.exports = {
   init, dbPath,
   getSettings, updateSettings,
-  listSessions, getSession, createSession, deleteSession, renameSession, setSessionProject, appendMessage, deleteLastMessage, setActiveSession,
-  listProjects, createProject, deleteProject
+  listSessions, getSession, createSession, deleteSession, renameSession, setSessionProject, setSessionPreset, appendMessage, deleteLastMessage, setActiveSession,
+  listProjects, createProject, deleteProject,
+  listPresets, createPreset, updatePreset, deletePreset
 };
