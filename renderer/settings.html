@@ -18,6 +18,7 @@
     --err:#FF8A8A;
     --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
     --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-scale: 1;
   }
   *{box-sizing:border-box;}
   html,body{
@@ -35,7 +36,7 @@
     display:flex; align-items:center; justify-content:space-between;
     flex-shrink:0;
   }
-  #titlebar .title{ font-family:var(--mono); font-size:12px; color:var(--text-muted); }
+  #titlebar .title{ font-family:var(--mono); font-size:calc(12px * var(--font-scale)); color:var(--text-muted); }
   #titlebar .title .caret{ color:var(--accent); }
   #titlebar .btns{ -webkit-app-region: no-drag; display:flex; align-items:center; gap:2px; }
   #maximize-btn, #close-btn{
@@ -56,7 +57,7 @@
   }
   .cat-btn{
     text-align:left; background:none; border:none; cursor:pointer;
-    color:var(--text-muted); font-family:var(--sans); font-size:12.5px;
+    color:var(--text-muted); font-family:var(--sans); font-size:calc(12.5px * var(--font-scale));
     padding:9px 10px; border-radius:8px;
   }
   .cat-btn:hover{ background:rgba(255,255,255,.05); color:var(--text-primary); }
@@ -65,35 +66,35 @@
   #content{ flex:1; min-width:0; overflow-y:auto; padding:16px 18px; }
   .pane{ display:none; flex-direction:column; gap:8px; }
   .pane.active{ display:flex; }
-  .pane h2{ margin:0 0 4px; font-size:13px; color:var(--text-primary); }
+  .pane h2{ margin:0 0 4px; font-size:calc(13px * var(--font-scale)); color:var(--text-primary); }
 
-  label{ font-size:10px; color:var(--text-muted); font-family:var(--mono); }
+  label{ font-size:calc(10px * var(--font-scale)); color:var(--text-muted); font-family:var(--mono); }
   input[type="text"]{
     background:var(--bg-deep); border:1px solid var(--border);
-    color:var(--text-primary); font-family:var(--mono); font-size:12px;
+    color:var(--text-primary); font-family:var(--mono); font-size:calc(12px * var(--font-scale));
     padding:7px 9px; border-radius:8px; outline:none; width:100%;
   }
   input[type="text"]:focus{ border-color:var(--accent-dim); }
   select{
     background:var(--bg-deep); border:1px solid var(--border);
-    color:var(--text-primary); font-family:var(--sans); font-size:12px;
+    color:var(--text-primary); font-family:var(--sans); font-size:calc(12px * var(--font-scale));
     padding:7px 9px; border-radius:8px; outline:none; width:100%;
   }
   select:focus{ border-color:var(--accent-dim); }
   textarea{
     background:var(--bg-deep); border:1px solid var(--border);
-    color:var(--text-primary); font-family:var(--sans); font-size:12px;
+    color:var(--text-primary); font-family:var(--sans); font-size:calc(12px * var(--font-scale));
     padding:7px 9px; border-radius:8px; outline:none; width:100%; resize:vertical;
     min-height:60px; line-height:1.45;
   }
   textarea:focus{ border-color:var(--accent-dim); }
-  textarea.mono{ font-family:var(--mono); font-size:11px; }
+  textarea.mono{ font-family:var(--mono); font-size:calc(11px * var(--font-scale)); }
 
   .workspace-row{ display:flex; gap:6px; }
   .workspace-row input{ flex:1; min-width:0; }
   #pick-workspace{
     background:var(--bg-deep); border:1px solid var(--border); color:var(--text-primary);
-    font-family:var(--mono); font-size:11px; padding:7px 10px; border-radius:8px;
+    font-family:var(--mono); font-size:calc(11px * var(--font-scale)); padding:7px 10px; border-radius:8px;
     cursor:pointer; white-space:nowrap; flex-shrink:0;
   }
   #pick-workspace:hover{ border-color:var(--accent-dim); }
@@ -101,7 +102,7 @@
   #tools-list, #mcp-tools-list{ display:flex; flex-direction:column; gap:4px; }
   .tool-row{
     display:flex; align-items:center; gap:8px;
-    font-size:11px; padding:6px 8px;
+    font-size:calc(11px * var(--font-scale)); padding:6px 8px;
     background:var(--bg-deep); border:1px solid var(--border); border-radius:8px;
   }
   .tool-row .tool-name{
@@ -138,10 +139,10 @@
     display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
     padding:6px 8px; background:var(--bg-sunken); border:1px solid var(--border); border-radius:8px;
   }
-  .mcp-server-header .caret{ color:var(--accent); display:inline-block; transition:transform .15s; font-size:10px; }
+  .mcp-server-header .caret{ color:var(--accent); display:inline-block; transition:transform .15s; font-size:calc(10px * var(--font-scale)); }
   .mcp-server-group.open .mcp-server-header .caret{ transform:rotate(90deg); }
-  .mcp-server-header .server-name{ flex:1; min-width:0; font-size:11.5px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .mcp-server-header .count{ font-size:10px; font-family:var(--mono); color:var(--text-muted); }
+  .mcp-server-header .server-name{ flex:1; min-width:0; font-size:calc(11.5px * var(--font-scale)); font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mcp-server-header .count{ font-size:calc(10px * var(--font-scale)); font-family:var(--mono); color:var(--text-muted); }
   .mcp-server-tools{ display:none; flex-direction:column; gap:4px; padding-left:14px; }
   .mcp-server-group.open .mcp-server-tools{ display:flex; }
   .mcp-server-group.connecting .mcp-server-header{ cursor:default; }
@@ -149,9 +150,9 @@
   .mcp-server-group.connecting .count{ color:var(--accent); animation:mcp-connecting 1.4s ease-in-out infinite; }
   @keyframes mcp-connecting{ 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
 
-  #mcp-error{ font-size:10.5px; color:var(--err); font-family:var(--mono); white-space:pre-wrap; }
+  #mcp-error{ font-size:calc(10.5px * var(--font-scale)); color:var(--err); font-family:var(--mono); white-space:pre-wrap; }
   #mcp-status{ display:flex; flex-direction:column; gap:3px; }
-  .mcp-status-row{ font-size:10.5px; font-family:var(--mono); white-space:pre-wrap; word-break:break-word; }
+  .mcp-status-row{ font-size:calc(10.5px * var(--font-scale)); font-family:var(--mono); white-space:pre-wrap; word-break:break-word; }
   .mcp-status-row.ok{ color:var(--ok); }
   .mcp-status-row.err{ color:var(--err); }
 
@@ -169,11 +170,12 @@
   .preset-row .del-preset:hover{ color:var(--err); background:rgba(255,255,255,.07); }
   .preset-row .del-preset svg{ width:13px; height:13px; }
   .preset-row .preset-prompt{ min-height:44px; }
-  .preset-empty{ font-size:11px; color:var(--text-muted); padding:2px 0; }
+  .preset-empty{ font-size:calc(11px * var(--font-scale)); color:var(--text-muted); padding:2px 0; }
   .preset-add-row{ display:flex; gap:6px; }
   .preset-add-row input{ flex:1; min-width:0; }
+  .hint{ font-size:calc(10.5px * var(--font-scale)); color:var(--text-muted); margin:-4px 0 6px; }
   #add-preset-btn{
-    background:var(--accent); color:#0B0D12; border:none; font-size:11px; font-weight:600;
+    background:var(--accent); color:#0B0D12; border:none; font-size:calc(11px * var(--font-scale)); font-weight:600;
     padding:7px 12px; border-radius:7px; cursor:pointer; white-space:nowrap;
   }
 
@@ -181,10 +183,10 @@
     flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border);
     background:var(--bg-elevated); display:flex; align-items:center; justify-content:flex-end; gap:8px;
   }
-  #save-status{ font-size:11px; color:var(--text-muted); font-family:var(--mono); margin-right:auto; }
+  #save-status{ font-size:calc(11px * var(--font-scale)); color:var(--text-muted); font-family:var(--mono); margin-right:auto; }
   #save-settings{
     background:var(--accent); color:#0B0D12;
-    border:none; font-size:11px; font-weight:600; padding:7px 14px;
+    border:none; font-size:calc(11px * var(--font-scale)); font-weight:600; padding:7px 14px;
     border-radius:7px; cursor:pointer;
   }
   #save-settings:disabled{ opacity:.6; cursor:default; }
@@ -208,6 +210,7 @@
     <div id="sidebar">
       <button class="cat-btn" data-cat="general" data-i18n="catGeneral"></button>
       <button class="cat-btn" data-cat="system" data-i18n="catSystem"></button>
+      <button class="cat-btn" data-cat="skills" data-i18n="catSkills"></button>
       <button class="cat-btn" data-cat="workspace" data-i18n="catWorkspace"></button>
       <button class="cat-btn" data-cat="mcp" data-i18n="catMcp"></button>
     </div>
@@ -228,6 +231,15 @@
           <option value="ko">한국어</option>
           <option value="en">English</option>
         </select>
+        <label for="font-scale" data-i18n="labelFontScale"></label>
+        <select id="font-scale">
+          <option value="0.75">75%</option>
+          <option value="1">100%</option>
+          <option value="1.25">125%</option>
+          <option value="1.5">150%</option>
+          <option value="1.75">175%</option>
+          <option value="2">200%</option>
+        </select>
       </div>
 
       <div class="pane" data-cat="system">
@@ -240,6 +252,18 @@
         <div class="preset-add-row">
           <input id="new-preset-name" type="text" data-i18n-placeholder="placeholderNewPreset" spellcheck="false">
           <button id="add-preset-btn" type="button" data-i18n="btnAddPreset"></button>
+        </div>
+      </div>
+
+      <div class="pane" data-cat="skills">
+        <h2 data-i18n="paneSkillsH2"></h2>
+        <p class="hint" data-i18n="hintSkills"></p>
+        <label data-i18n="labelSkills"></label>
+        <div id="skills-list"></div>
+        <div class="preset-add-row">
+          <input id="new-skill-name" type="text" data-i18n-placeholder="placeholderNewSkillName" spellcheck="false">
+          <input id="new-skill-desc" type="text" data-i18n-placeholder="placeholderNewSkillDesc" spellcheck="false">
+          <button id="add-skill-btn" type="button" data-i18n="btnAddSkill"></button>
         </div>
       </div>
 

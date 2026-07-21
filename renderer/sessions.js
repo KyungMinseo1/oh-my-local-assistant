@@ -204,6 +204,7 @@
     projects = projectList;
     window.I18N.setLang(settings.language || 'ko');
     window.I18N.applyDom(document);
+    document.documentElement.style.setProperty('--font-scale', settings.fontScale || 1);
   }
 
   // Picks up changes made elsewhere (e.g. a session deleted from the main

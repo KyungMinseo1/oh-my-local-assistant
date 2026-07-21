@@ -11,14 +11,24 @@
     { name: 'read_file', labelKey: 'toolLabelReadFile' },
     { name: 'file_glob_search', labelKey: 'toolLabelGlobSearch' },
     { name: 'grep_search', labelKey: 'toolLabelGrepSearch' },
-    { name: 'tool_search', labelKey: 'toolLabelToolSearch' }
+    { name: 'tool_search', labelKey: 'toolLabelToolSearch' },
+    { name: 'read_skill', labelKey: 'toolLabelReadSkill' },
+    { name: 'run_command', labelKey: 'toolLabelRunCommand' }
   ];
+
+  // Executes arbitrary shell commands — unlike every other built-in above
+  // (sandboxed, read-only), this defaults off and non-always-allow even once
+  // enabled, so every call still needs an inline approval unless the user
+  // explicitly opts in. Mirrors the same default app.js's load() applies.
+  const RISKY_TOOLS = new Set(['run_command']);
 
   const baseUrlInput = $('base-url'), modelInput = $('model-name'), maxTokensInput = $('max-tokens');
   const maxToolRoundsInput = $('max-tool-rounds');
   const languageSelect = $('language');
+  const fontScaleSelect = $('font-scale');
   const systemPromptInput = $('system-prompt');
   const presetsListEl = $('presets-list'), newPresetNameInput = $('new-preset-name'), addPresetBtn = $('add-preset-btn');
+  const skillsListEl = $('skills-list'), newSkillNameInput = $('new-skill-name'), newSkillDescInput = $('new-skill-desc'), addSkillBtn = $('add-skill-btn');
   const workspacePathInput = $('workspace-path'), pickWorkspaceBtn = $('pick-workspace'), toolsListEl = $('tools-list');
   const mcpServersInput = $('mcp-servers'), mcpStatusEl = $('mcp-status'), mcpErrorEl = $('mcp-error'), mcpToolsListEl = $('mcp-tools-list');
   const saveBtn = $('save-settings'), saveStatusEl = $('save-status'), closeBtn = $('close-btn');
@@ -28,11 +38,14 @@
   let mcpToolList = [];   // raw window.host.listMcpTools() shape: [{server,name,toolName,description,inputSchema,error?}]
   let connectingServers = new Set();   // server names whose (re)connect attempt hasn't settled yet — see onMcpStatusChanged
   let presets = [];   // named system-prompt presets a session can pick instead of the global default
+  let skills = [];    // {id, name, description, body} — full skill library, fetched here since the main widget only ever loads the lightweight {id,name,description} index
 
   function ensureToolDefaults() {
     if (!settings.tools) settings.tools = {};
     BUILTIN_TOOLS.forEach(t => {
-      if (!settings.tools[t.name]) settings.tools[t.name] = { enabled: true, alwaysAllow: true };
+      if (!settings.tools[t.name]) {
+        settings.tools[t.name] = RISKY_TOOLS.has(t.name) ? { enabled: false, alwaysAllow: false } : { enabled: true, alwaysAllow: true };
+      }
     });
     mcpToolList.filter(t => !t.error).forEach(t => {
       if (!settings.tools[t.name]) settings.tools[t.name] = { enabled: true, alwaysAllow: false };
@@ -89,7 +102,7 @@
     const stillConnecting = [...connectingServers].filter(name => !settled.has(name));
     if (!ok.length && !stillConnecting.length) {
       const e = document.createElement('div');
-      e.style.cssText = 'font-size:11px;color:var(--text-muted);';
+      e.style.cssText = 'font-size:calc(11px * var(--font-scale));color:var(--text-muted);';
       e.textContent = t('mcpNoToolsFound');
       mcpToolsListEl.appendChild(e);
       return;
@@ -306,6 +319,78 @@
   addPresetBtn.addEventListener('click', addPreset);
   newPresetNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addPreset(); });
 
+  // ---- skills ---------------------------------------------------------------
+  // Each skill is a name + one-line description (always shown to the model,
+  // see apiMessages() in app.js) plus a body of full instructions loaded only
+  // on demand via the read_skill tool. Edits save on blur, same as presets.
+  function renderSkillsList() {
+    skillsListEl.innerHTML = '';
+    if (!skills.length) {
+      const e = document.createElement('div');
+      e.className = 'preset-empty';
+      e.textContent = t('noSkills');
+      skillsListEl.appendChild(e);
+      return;
+    }
+    skills.forEach(sk => {
+      const row = document.createElement('div');
+      row.className = 'preset-row';
+      row.innerHTML = `
+        <div class="preset-row-head">
+          <input class="preset-name" type="text" spellcheck="false">
+          <button class="del-preset" type="button" title="${t('delete')}">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <input class="skill-desc" type="text" spellcheck="false" data-i18n-placeholder="placeholderSkillDesc">
+        <textarea class="preset-prompt" rows="5" data-i18n-placeholder="placeholderSkillBody" spellcheck="false"></textarea>`;
+      window.I18N.applyDom(row);
+      const nameInput = row.querySelector('.preset-name');
+      const descInput = row.querySelector('.skill-desc');
+      const bodyInput = row.querySelector('.preset-prompt');
+      nameInput.value = sk.name;
+      descInput.value = sk.description;
+      bodyInput.value = sk.body;
+      nameInput.addEventListener('blur', () => {
+        const name = nameInput.value.trim();
+        if (!name || name === sk.name) { nameInput.value = sk.name; return; }
+        sk.name = name;
+        window.host.updateSkill(sk.id, { name });
+      });
+      descInput.addEventListener('blur', () => {
+        const description = descInput.value.trim();
+        if (description === sk.description) return;
+        sk.description = description;
+        window.host.updateSkill(sk.id, { description });
+      });
+      bodyInput.addEventListener('blur', () => {
+        if (bodyInput.value === sk.body) return;
+        sk.body = bodyInput.value;
+        window.host.updateSkill(sk.id, { body: sk.body });
+      });
+      row.querySelector('.del-preset').addEventListener('click', async () => {
+        await window.host.deleteSkill(sk.id);
+        skills = skills.filter(x => x.id !== sk.id);
+        renderSkillsList();
+      });
+      skillsListEl.appendChild(row);
+    });
+  }
+
+  async function addSkill() {
+    const name = newSkillNameInput.value.trim();
+    if (!name) return;
+    const description = newSkillDescInput.value.trim();
+    const sk = await window.host.createSkill(name, description, '');
+    skills.push(sk);
+    newSkillNameInput.value = '';
+    newSkillDescInput.value = '';
+    renderSkillsList();
+  }
+  addSkillBtn.addEventListener('click', addSkill);
+  newSkillNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') newSkillDescInput.focus(); });
+  newSkillDescInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSkill(); });
+
   function populateFields() {
     baseUrlInput.value = settings.baseUrl || DEFAULT_BASE;
     modelInput.value = settings.model || '';
@@ -316,6 +401,7 @@
     mcpServersInput.value = JSON.stringify(settings.mcpServers || {}, null, 2);
     mcpErrorEl.textContent = '';
     languageSelect.value = settings.language || 'ko';
+    fontScaleSelect.value = String(settings.fontScale || 1);
   }
 
   // ---- category switching --------------------------------------------------
@@ -379,6 +465,13 @@
     renderMcpToolsList();
     renderMcpStatus();
     renderPresetsList();
+    renderSkillsList();
+  });
+
+  fontScaleSelect.addEventListener('change', () => {
+    settings.fontScale = parseFloat(fontScaleSelect.value);
+    window.host.updateSettings({ fontScale: settings.fontScale });
+    document.documentElement.style.setProperty('--font-scale', settings.fontScale);
   });
 
   // Applies immediately (native picker), like the other checkboxes here —
@@ -433,10 +526,14 @@
     if (typeof settings.systemPrompt !== 'string') settings.systemPrompt = '';
     if (!settings.mcpServers || typeof settings.mcpServers !== 'object') settings.mcpServers = {};
     if (!settings.tools) settings.tools = {};
+    if (typeof settings.fontScale !== 'number') settings.fontScale = 1;
+    document.documentElement.style.setProperty('--font-scale', settings.fontScale);
 
     mcpToolList = await window.host.listMcpTools();
     ensureToolDefaults();
     presets = await window.host.listPresets();
+    const skillIndex = await window.host.listSkills();
+    skills = await Promise.all(skillIndex.map(sk => window.host.getSkill(sk.id)));
 
     window.I18N.setLang(settings.language || 'ko');
     window.I18N.applyDom(document);
@@ -446,6 +543,7 @@
     renderMcpToolsList();
     renderMcpStatus();
     renderPresetsList();
+    renderSkillsList();
     showCategory('general');
   })();
 })();

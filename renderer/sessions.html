@@ -18,6 +18,7 @@
     --err:#FF8A8A;
     --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
     --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --font-scale: 1;
   }
   *{box-sizing:border-box;}
   html,body{
@@ -35,7 +36,7 @@
     display:flex; align-items:center; justify-content:space-between;
     flex-shrink:0;
   }
-  #titlebar .title{ font-family:var(--mono); font-size:12px; color:var(--text-muted); }
+  #titlebar .title{ font-family:var(--mono); font-size:calc(12px * var(--font-scale)); color:var(--text-muted); }
   #titlebar .title .caret{ color:var(--accent); }
   #titlebar .btns{ -webkit-app-region: no-drag; display:flex; align-items:center; gap:2px; }
   #maximize-btn, #close-btn{
@@ -47,7 +48,7 @@
   #maximize-btn svg, #close-btn svg{ width:14px; height:14px; }
 
   #tabs{ display:flex; gap:2px; padding:8px 10px 0; background:var(--bg-elevated); border-bottom:1px solid var(--border); flex-shrink:0; }
-  .tab-btn{ background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:12px; font-family:var(--sans); padding:8px 12px; border-bottom:2px solid transparent; }
+  .tab-btn{ background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:calc(12px * var(--font-scale)); font-family:var(--sans); padding:8px 12px; border-bottom:2px solid transparent; }
   .tab-btn:hover{ color:var(--text-primary); }
   .tab-btn.active{ color:var(--accent); border-bottom-color:var(--accent); }
 
@@ -56,22 +57,22 @@
   .tab-pane.active{ display:flex; }
 
   .action-row{
-    padding:10px 14px; font-size:12px; color:var(--accent); cursor:pointer;
+    padding:10px 14px; font-size:calc(12px * var(--font-scale)); color:var(--accent); cursor:pointer;
     display:flex; align-items:center; gap:6px; border-bottom:1px solid var(--border);
   }
   .action-row:hover{ background:rgba(143,161,255,.08); }
 
   .session-row{
     padding:8px 14px; display:flex; align-items:center; gap:8px;
-    cursor:pointer; font-size:12px; color:var(--text-muted);
+    cursor:pointer; font-size:calc(12px * var(--font-scale)); color:var(--text-muted);
     border-left:2px solid transparent;
   }
   .session-row:hover{ background:rgba(255,255,255,.04); color:var(--text-primary); }
   .session-row.active{ border-left-color:var(--accent); color:var(--text-primary); background:rgba(143,161,255,.06); }
   .session-row .name{ flex:1; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-  .session-row .meta{ font-family:var(--mono); font-size:10px; color:var(--text-muted); flex-shrink:0; }
+  .session-row .meta{ font-family:var(--mono); font-size:calc(10px * var(--font-scale)); color:var(--text-muted); flex-shrink:0; }
   .session-row .proj-select{
-    font-family:var(--mono); font-size:10px; background:var(--bg-deep); color:var(--text-muted);
+    font-family:var(--mono); font-size:calc(10px * var(--font-scale)); background:var(--bg-deep); color:var(--text-muted);
     border:1px solid var(--border); border-radius:6px; padding:2px 4px; max-width:90px; flex-shrink:0;
   }
   .session-row .del{
@@ -85,21 +86,21 @@
   #new-project-row{ display:flex; gap:6px; padding:10px 14px; border-bottom:1px solid var(--border); }
   #new-project-name{
     flex:1; min-width:0; background:var(--bg-deep); border:1px solid var(--border);
-    color:var(--text-primary); font-size:12px; padding:6px 8px; border-radius:7px; outline:none;
+    color:var(--text-primary); font-size:calc(12px * var(--font-scale)); padding:6px 8px; border-radius:7px; outline:none;
   }
   #new-project-name:focus{ border-color:var(--accent-dim); }
   #add-project-btn{
-    background:var(--accent); color:#0B0D12; border:none; font-size:11px; font-weight:600;
+    background:var(--accent); color:#0B0D12; border:none; font-size:calc(11px * var(--font-scale)); font-weight:600;
     padding:6px 10px; border-radius:7px; cursor:pointer; white-space:nowrap;
   }
 
   .project-group{ border-bottom:1px solid var(--border); }
-  .project-header{ display:flex; align-items:center; gap:8px; padding:8px 14px; background:var(--bg-sunken); font-size:11px; color:var(--text-primary); font-weight:600; }
+  .project-header{ display:flex; align-items:center; gap:8px; padding:8px 14px; background:var(--bg-sunken); font-size:calc(11px * var(--font-scale)); color:var(--text-primary); font-weight:600; }
   .project-header .count{ color:var(--text-muted); font-weight:400; font-family:var(--mono); }
   .project-header .del-project{ margin-left:auto; opacity:.6; color:var(--text-muted); background:none; border:none; cursor:pointer; padding:2px; display:flex; align-items:center; }
   .project-header .del-project:hover{ opacity:1; color:var(--err); }
   .project-header .del-project svg{ width:12px; height:12px; }
-  .project-empty{ padding:6px 14px 10px; font-size:11px; color:var(--text-muted); }
+  .project-empty{ padding:6px 14px 10px; font-size:calc(11px * var(--font-scale)); color:var(--text-muted); }
 </style>
 </head>
 <body data-i18n-title-key="sessionsWindowTitle">

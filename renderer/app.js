@@ -117,6 +117,41 @@
           }
         }
       }
+    },
+    {
+      name: 'read_skill',
+      label: '스킬 불러오기',
+      schema: {
+        type: 'function',
+        function: {
+          name: 'read_skill',
+          description: '시스템 프롬프트에 나열된 사용 가능한 스킬 중 하나의 전체 지침을 불러옵니다. 목록의 설명(description)이 현재 작업과 관련 있어 보이면 이 도구로 그 스킬의 본문을 읽고 그 지침을 따르세요.',
+          parameters: {
+            type: 'object',
+            properties: { name: { type: 'string', description: '불러올 스킬의 이름 (스킬 목록에 나온 이름과 정확히 일치해야 함)' } },
+            required: ['name']
+          }
+        }
+      }
+    },
+    {
+      name: 'run_command',
+      label: '터미널 명령 실행',
+      schema: {
+        type: 'function',
+        function: {
+          name: 'run_command',
+          description: '워크스페이스 폴더 안에서 셸 명령을 실행하고 표준출력/표준에러/종료 코드를 반환합니다. 임의의 명령을 실행할 수 있는 강력한 도구이므로 신중하게 사용하세요.',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: { type: 'string', description: '실행할 셸 명령' },
+              cwd: { type: 'string', description: '명령을 실행할 워크스페이스 기준 상대 경로 (기본값: 워크스페이스 루트)' }
+            },
+            required: ['command']
+          }
+        }
+      }
     }
   ];
 
@@ -163,6 +198,7 @@
   let sessionList = [];   // metadata only: {id, title, created, updated, projectId} — feeds the drawer
   let session = null;     // the currently open session, full detail incl. messages
   let presetList = [];    // named system-prompt presets, managed in the settings window
+  let skillList = [];     // {id, name, description} index of skills, managed in the settings window — full body loaded on demand via read_skill
   let isOpen = false;
   let controller = null;   // AbortController for the in-flight request
   let pendingConfirmResolve = null;   // resolves the current tool-approval prompt, if any
@@ -268,12 +304,19 @@
     settings = await window.host.getSettings();
     window.I18N.setLang(settings.language || 'ko');
     window.I18N.applyDom(document);
+    document.documentElement.style.setProperty('--font-scale', settings.fontScale || 1);
     if (typeof settings.workspace !== 'string') settings.workspace = '';
     if (typeof settings.systemPrompt !== 'string') settings.systemPrompt = '';
     if (!settings.mcpServers || typeof settings.mcpServers !== 'object') settings.mcpServers = {};
     if (!settings.tools) settings.tools = {};
     TOOL_DEFS.forEach(t => {
-      if (!settings.tools[t.name]) settings.tools[t.name] = { enabled: true, alwaysAllow: true };
+      if (!settings.tools[t.name]) {
+        // run_command executes arbitrary shell commands — unlike every other
+        // built-in here (sandboxed, read-only), it defaults off and, even
+        // once enabled, still requires per-call approval until the user
+        // explicitly opts into "always allow" themselves.
+        settings.tools[t.name] = t.name === 'run_command' ? { enabled: false, alwaysAllow: false } : { enabled: true, alwaysAllow: true };
+      }
     });
 
     sessionList = await window.host.listSessions();
@@ -287,6 +330,7 @@
     }
     session = await window.host.getSession(settings.activeId);
     presetList = await window.host.listPresets();
+    skillList = await window.host.listSkills();
     resetContextUsage();
   }
 
@@ -932,6 +976,13 @@
         note: results.length ? undefined : '일치하는 도구를 찾지 못했습니다. available_mcp_servers에 관련 서버가 있는지 먼저 확인하고, 있다면 그 서버 이름이나 다른 키워드로 다시 검색하세요.'
       };
     }
+    if (name === 'read_skill') {
+      const entry = skillList.find(s => s.name === (argsObj?.name || ''));
+      if (!entry) return { ok: false, error: '해당 이름의 스킬을 찾을 수 없습니다: ' + (argsObj?.name || '') };
+      const skill = await window.host.getSkill(entry.id);
+      if (!skill) return { ok: false, error: '스킬을 불러오지 못했습니다: ' + entry.name };
+      return { ok: true, name: skill.name, content: skill.body };
+    }
     return window.host.runTool(name, argsObj);
   }
 
@@ -960,6 +1011,14 @@
     const sys = (preset ? preset.prompt : settings.systemPrompt || '').trim();
     if (sys) parts.push(sys);
     if (toolsActive) parts.push(TOOL_CALL_FORMAT_REMINDER);
+    // Lightweight, always-present skill index — only name+description, not
+    // each skill's full body. The model loads a skill's actual instructions
+    // on demand via read_skill only when one looks relevant, so having many
+    // skills costs a few lines here rather than bloating every request.
+    if (settings.tools?.read_skill?.enabled && skillList.length) {
+      const lines = skillList.map(sk => `- ${sk.name}: ${sk.description}`).join('\n');
+      parts.push(`사용 가능한 스킬 목록 (관련 있어 보이면 read_skill로 전체 지침을 불러오세요):\n${lines}`);
+    }
     return parts.length ? [{ role: 'system', content: parts.join('\n\n') }, ...msgs] : msgs;
   }
 
@@ -1542,10 +1601,15 @@
         renderPresetSelect();
         return;
       }
+      if (info?.scope === 'skill') {
+        skillList = await window.host.listSkills();
+        return;
+      }
       if (info?.scope === 'settings') {
         const prevActiveId = settings.activeId;
         const prevLang = settings.language;
         settings = await window.host.getSettings();
+        document.documentElement.style.setProperty('--font-scale', settings.fontScale || 1);
         const langChanged = (settings.language || 'ko') !== (prevLang || 'ko');
         if (langChanged) {
           window.I18N.setLang(settings.language || 'ko');

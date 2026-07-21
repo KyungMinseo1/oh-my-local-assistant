@@ -18,6 +18,8 @@ let tray = null;
 // of rewriting one big blob — see db.js for the schema and the one-time
 // migration from the old single-file sessions.json.
 const db = require('./db.js');
+const skills = require('./skills.js');
+const { exec } = require('child_process');
 
 // Every window keeps its own in-memory slice of the store; broadcast so the
 // others pick up a change made from elsewhere (e.g. a session created in the
@@ -99,6 +101,22 @@ ipcMain.handle('preset:update', (e, id, partial) => {
 ipcMain.handle('preset:delete', (e, id) => {
   db.deletePreset(id);
   broadcastChange(e.sender, { scope: 'preset' });
+});
+
+ipcMain.handle('skill:list', () => skills.listSkills());
+ipcMain.handle('skill:get', (_e, id) => skills.getSkill(id));
+ipcMain.handle('skill:create', (e, name, description, body) => {
+  const skill = skills.createSkill(name, description, body);
+  broadcastChange(e.sender, { scope: 'skill' });
+  return skill;
+});
+ipcMain.handle('skill:update', (e, id, partial) => {
+  skills.updateSkill(id, partial || {});
+  broadcastChange(e.sender, { scope: 'skill' });
+});
+ipcMain.handle('skill:delete', (e, id) => {
+  skills.deleteSkill(id);
+  broadcastChange(e.sender, { scope: 'skill' });
 });
 
 ipcMain.handle('db:path', () => db.dbPath());
@@ -243,6 +261,49 @@ const TOOL_IMPLS = {
       }
     });
     return { ok: true, count: matches.length, truncated: budget.count >= MAX_SCAN_ENTRIES, matches };
+  },
+
+  // Arbitrary shell execution — unlike every other tool here, this is not
+  // sandboxed beyond running with cwd pinned inside the workspace; it can do
+  // anything the user's own shell can. That's why it defaults to disabled
+  // and non-always-allow in settings (see app.js/settings.js), so every call
+  // always goes through the existing confirmToolCall() approval prompt
+  // unless the user explicitly opts in.
+  run_command(args) {
+    const root = workspaceRoot();
+    if (!root) return { ok: false, error: '워크스페이스 폴더가 설정되지 않았습니다.' };
+    const command = String(args?.command || '').trim();
+    if (!command) return { ok: false, error: 'command가 필요합니다.' };
+    let cwd;
+    try { cwd = resolveInWorkspace(root, args?.cwd || '.'); } catch (e) { return { ok: false, error: e.message }; }
+
+    return new Promise((resolve) => {
+      exec(command, { cwd, timeout: 30_000, maxBuffer: 10_000_000, windowsHide: true }, (error, stdout, stderr) => {
+        const truncate = (s) => (s.length <= MAX_READ_CHARS ? { text: s, truncated: false } : { text: s.slice(0, MAX_READ_CHARS), truncated: true });
+        const out = truncate(stdout || '');
+        const err = truncate(stderr || '');
+        // A non-zero exit code still comes through as `error` from exec(), but
+        // that's a normal command result the model should see (stdout/stderr/
+        // exitCode), not a tool failure — only a spawn/timeout failure (no
+        // numeric exit code at all) is reported as ok:false.
+        if (error && typeof error.code !== 'number') {
+          return resolve({
+            ok: false,
+            error: error.killed ? '명령이 시간 초과로 종료되었습니다 (30초).' : String(error.message || error),
+            stdout: out.text,
+            stderr: err.text,
+            truncated: out.truncated || err.truncated
+          });
+        }
+        resolve({
+          ok: true,
+          exitCode: error ? error.code : 0,
+          stdout: out.text,
+          stderr: err.text,
+          truncated: out.truncated || err.truncated
+        });
+      });
+    });
   }
 };
 
@@ -574,6 +635,7 @@ ipcMain.on('sessions:open', () => openSessionsWindow());
 
 app.whenReady().then(() => {
   db.init(app.getPath('userData'));
+  skills.init(app.getPath('userData'));
   createWindow();
   createTray();
   globalShortcut.register('CommandOrControl+Shift+Space', toggleWindow);

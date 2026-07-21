@@ -19,7 +19,8 @@ const DEFAULT_SETTINGS = {
   bubble: null,
   panel: null,
   activeId: null,
-  language: 'ko'
+  language: 'ko',
+  fontScale: 1
 };
 
 function dbFilePath(userDataDir) {
