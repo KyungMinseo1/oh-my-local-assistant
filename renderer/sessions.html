@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>세션 관리 — Local Assistant</title>
+<script src="i18n.js"></script>
 <style>
   :root{
     --bg-deep:#0B0D12;
@@ -101,38 +102,38 @@
   .project-empty{ padding:6px 14px 10px; font-size:11px; color:var(--text-muted); }
 </style>
 </head>
-<body>
+<body data-i18n-title-key="sessionsWindowTitle">
 <div id="root">
   <div id="titlebar">
-    <div class="title"><span class="caret">›</span> 세션 관리</div>
+    <div class="title"><span class="caret">›</span> <span data-i18n="sessionsHeaderTitle"></span></div>
     <div class="btns">
-      <button id="maximize-btn" title="최대화">
+      <button id="maximize-btn" data-i18n-title="maximize">
         <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
       </button>
-      <button id="close-btn" title="닫기">
+      <button id="close-btn" data-i18n-title="close">
         <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
       </button>
     </div>
   </div>
 
   <div id="tabs">
-    <button class="tab-btn active" data-tab="all">전체</button>
-    <button class="tab-btn" data-tab="projects">프로젝트</button>
+    <button class="tab-btn active" data-tab="all" data-i18n="tabAll"></button>
+    <button class="tab-btn" data-tab="projects" data-i18n="tabProjects"></button>
   </div>
 
   <div id="content">
     <div class="tab-pane active" data-tab="all">
       <div id="new-session-all" class="action-row">
         <svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-        <span>새 세션</span>
+        <span data-i18n="newSession"></span>
       </div>
       <div id="all-list"></div>
     </div>
 
     <div class="tab-pane" data-tab="projects">
       <div id="new-project-row">
-        <input id="new-project-name" type="text" placeholder="새 프로젝트 이름" spellcheck="false">
-        <button id="add-project-btn" type="button">+ 추가</button>
+        <input id="new-project-name" type="text" data-i18n-placeholder="placeholderNewProject" spellcheck="false">
+        <button id="add-project-btn" type="button" data-i18n="btnAddProject"></button>
       </div>
       <div id="project-groups"></div>
     </div>

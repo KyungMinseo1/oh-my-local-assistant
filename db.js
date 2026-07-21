@@ -18,7 +18,8 @@ const DEFAULT_SETTINGS = {
   tools: {},
   bubble: null,
   panel: null,
-  activeId: null
+  activeId: null,
+  language: 'ko'
 };
 
 function dbFilePath(userDataDir) {

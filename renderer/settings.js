@@ -1,19 +1,22 @@
 (() => {
   const DEFAULT_BASE = 'http://127.0.0.1:8080/v1';
   const $ = (id) => document.getElementById(id);
+  const t = window.I18N.t;
 
   // Mirrors TOOL_DEFS in app.js (name + label only — the request-time schema
-  // lives with the chat loop in the main widget, not here).
+  // lives with the chat loop in the main widget, not here). Labels are
+  // resolved through I18N so this list stays language-independent.
   const BUILTIN_TOOLS = [
-    { name: 'get_datetime', label: '현재 시간 조회' },
-    { name: 'read_file', label: '파일 읽기' },
-    { name: 'file_glob_search', label: '파일 이름 검색' },
-    { name: 'grep_search', label: '내용 검색 (grep)' },
-    { name: 'tool_search', label: '도구 검색 (MCP)' }
+    { name: 'get_datetime', labelKey: 'toolLabelDatetime' },
+    { name: 'read_file', labelKey: 'toolLabelReadFile' },
+    { name: 'file_glob_search', labelKey: 'toolLabelGlobSearch' },
+    { name: 'grep_search', labelKey: 'toolLabelGrepSearch' },
+    { name: 'tool_search', labelKey: 'toolLabelToolSearch' }
   ];
 
   const baseUrlInput = $('base-url'), modelInput = $('model-name'), maxTokensInput = $('max-tokens');
   const maxToolRoundsInput = $('max-tool-rounds');
+  const languageSelect = $('language');
   const systemPromptInput = $('system-prompt');
   const workspacePathInput = $('workspace-path'), pickWorkspaceBtn = $('pick-workspace'), toolsListEl = $('tools-list');
   const mcpServersInput = $('mcp-servers'), mcpStatusEl = $('mcp-status'), mcpErrorEl = $('mcp-error'), mcpToolsListEl = $('mcp-tools-list');
@@ -40,8 +43,8 @@
     row.className = 'tool-row';
     row.innerHTML = `
       <span class="tool-name"></span>
-      <label class="switch" title="사용"><input type="checkbox" class="opt-enabled"><span class="track"></span></label>
-      <label class="switch" title="항상 허용"><input type="checkbox" class="opt-always"><span class="track"></span></label>`;
+      <label class="switch" title="${t('toolSwitchEnabledTitle')}"><input type="checkbox" class="opt-enabled"><span class="track"></span></label>
+      <label class="switch" title="${t('toolSwitchAlwaysTitle')}"><input type="checkbox" class="opt-always"><span class="track"></span></label>`;
     const nameEl = row.querySelector('.tool-name');
     nameEl.textContent = label;
     nameEl.title = label;
@@ -64,7 +67,7 @@
 
   function renderToolsList() {
     toolsListEl.innerHTML = '';
-    BUILTIN_TOOLS.forEach(t => renderToolRow(toolsListEl, t.name, t.label));
+    BUILTIN_TOOLS.forEach(bt => renderToolRow(toolsListEl, bt.name, t(bt.labelKey)));
   }
 
   // Servers stay open across a re-render (e.g. after saving) unless the user
@@ -85,7 +88,7 @@
     if (!ok.length && !stillConnecting.length) {
       const e = document.createElement('div');
       e.style.cssText = 'font-size:11px;color:var(--text-muted);';
-      e.textContent = '연결된 서버에서 발견된 도구가 없습니다.';
+      e.textContent = t('mcpNoToolsFound');
       mcpToolsListEl.appendChild(e);
       return;
     }
@@ -120,7 +123,7 @@
       group.innerHTML = `
         <div class="mcp-server-header">
           <span class="server-name"></span>
-          <span class="count">연결 중…</span>
+          <span class="count">${t('mcpConnectingCount')}</span>
         </div>`;
       group.querySelector('.server-name').textContent = server;
       mcpToolsListEl.appendChild(group);
@@ -137,7 +140,7 @@
       const row = document.createElement('div');
       if (connectingServers.has(name)) {
         row.className = 'mcp-status-row';
-        row.textContent = '… ' + name + ': 연결 중';
+        row.textContent = '… ' + t('mcpStatusConnecting', { name });
       } else {
         const err = errMap[name];
         row.className = 'mcp-status-row' + (err ? ' err' : ' ok');
@@ -249,6 +252,7 @@
     workspacePathInput.value = settings.workspace || '';
     mcpServersInput.value = JSON.stringify(settings.mcpServers || {}, null, 2);
     mcpErrorEl.textContent = '';
+    languageSelect.value = settings.language || 'ko';
   }
 
   // ---- category switching --------------------------------------------------
@@ -268,9 +272,9 @@
     let mcpServers;
     try {
       mcpServers = JSON.parse(mcpServersInput.value.trim() || '{}');
-      if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) throw new Error('최상위는 객체({...})여야 합니다.');
+      if (!mcpServers || typeof mcpServers !== 'object' || Array.isArray(mcpServers)) throw new Error(t('mcpJsonTopLevelError'));
     } catch (e) {
-      mcpErrorEl.textContent = 'MCP 서버 설정 JSON 오류: ' + e.message;
+      mcpErrorEl.textContent = t('mcpJsonError', { msg: e.message });
       showCategory('mcp');
       return;
     }
@@ -280,7 +284,7 @@
     const mtr = parseInt(maxToolRoundsInput.value.trim(), 10);
 
     saveBtn.disabled = true;
-    saveStatusEl.textContent = 'MCP 서버 연결 중…';
+    saveStatusEl.textContent = t('statusConnectingMcp');
     mcpToolList = await window.host.reloadMcpServers(mcpServers);
     ensureToolDefaults();
     settings = await window.host.updateSettings({
@@ -293,11 +297,24 @@
       tools: settings.tools
     });
     saveBtn.disabled = false;
-    saveStatusEl.textContent = '저장됨';
+    saveStatusEl.textContent = t('statusSaved');
     renderToolsList();
     renderMcpToolsList();
     renderMcpStatus();
     setTimeout(() => { saveStatusEl.textContent = ''; }, 1500);
+  });
+
+  // Applies immediately, like the workspace picker below — no need to wait
+  // for the save button. Re-renders this window's own dynamic text right
+  // away; other open windows pick it up via the store:changed broadcast.
+  languageSelect.addEventListener('change', () => {
+    settings.language = languageSelect.value;
+    window.host.updateSettings({ language: settings.language });
+    window.I18N.setLang(settings.language);
+    window.I18N.applyDom(document);
+    renderToolsList();
+    renderMcpToolsList();
+    renderMcpStatus();
   });
 
   // Applies immediately (native picker), like the other checkboxes here —
@@ -320,7 +337,7 @@
   const RESTORE_ICON = '<rect x="4" y="8" width="12" height="12" rx="1"/><path d="M8 8V5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3"/>';
   function setMaximizeIcon(isMax) {
     maximizeBtn.querySelector('svg').innerHTML = isMax ? RESTORE_ICON : MAXIMIZE_ICON;
-    maximizeBtn.title = isMax ? '이전 크기로' : '최대화';
+    maximizeBtn.title = isMax ? t('restoreSize') : t('maximize');
   }
   maximizeBtn.addEventListener('click', () => window.host.toggleMaximize());
   titlebarEl.addEventListener('dblclick', (e) => {
@@ -355,6 +372,9 @@
 
     mcpToolList = await window.host.listMcpTools();
     ensureToolDefaults();
+
+    window.I18N.setLang(settings.language || 'ko');
+    window.I18N.applyDom(document);
 
     populateFields();
     renderToolsList();

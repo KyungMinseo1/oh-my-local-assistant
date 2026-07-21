@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Local Assistant</title>
+<script src="i18n.js"></script>
 <style>
   :root{
     --bg-deep:#0B0D12;
@@ -308,13 +309,13 @@
     <div id="header">
       <div class="title"><span class="caret">›</span><span id="endpoint-label">127.0.0.1:8080</span></div>
       <div class="btns">
-        <button class="ibtn" id="sessions-btn" title="세션 목록">
+        <button class="ibtn" id="sessions-btn" data-i18n-title="titleSessions">
           <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>
         </button>
-        <button class="ibtn" id="settings-btn" title="설정">
+        <button class="ibtn" id="settings-btn" data-i18n-title="titleSettings">
           <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
-        <button class="ibtn" id="close-btn" title="닫기">
+        <button class="ibtn" id="close-btn" data-i18n-title="close">
           <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
         </button>
       </div>
@@ -330,13 +331,13 @@
     <div id="messages"></div>
 
     <div id="composer">
-      <textarea id="input" rows="1" placeholder="메시지 입력..."></textarea>
-      <button id="action" title="전송">
+      <textarea id="input" rows="1" data-i18n-placeholder="placeholderInput"></textarea>
+      <button id="action" data-i18n-title="titleSend">
         <svg id="action-icon" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
       </button>
     </div>
 
-    <div id="resize-handle" title="크기 조절"></div>
+    <div id="resize-handle" data-i18n-title="titleResize"></div>
   </div>
 
   <div id="bubble" title="Local Assistant">

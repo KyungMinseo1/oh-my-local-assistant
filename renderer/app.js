@@ -3,6 +3,9 @@
   const DEFAULT_MAX_TOKENS = 1024;   // caps runaway generation when a model never emits EOS
 
   const $ = (id) => document.getElementById(id);
+  // Named `tr` (not `t`) since `t` is already used pervasively below as a
+  // loop variable for tool-def objects (t.name, t.label, ...).
+  const tr = window.I18N.t;
   const panel = $('panel'), bubble = $('bubble'), dot = $('dot');
   const sessionsEl = $('sessions'), sessionsBtn = $('sessions-btn');
   const settingsBtn = $('settings-btn');
@@ -261,6 +264,8 @@
   // ---- persistence --------------------------------------------------------
   async function load() {
     settings = await window.host.getSettings();
+    window.I18N.setLang(settings.language || 'ko');
+    window.I18N.applyDom(document);
     if (typeof settings.workspace !== 'string') settings.workspace = '';
     if (typeof settings.systemPrompt !== 'string') settings.systemPrompt = '';
     if (!settings.mcpServers || typeof settings.mcpServers !== 'object') settings.mcpServers = {};
@@ -337,14 +342,6 @@
     if (entry) entry.title = title;
   }
 
-  function timeAgo(ts) {
-    const d = Math.floor((Date.now() - ts) / 1000);
-    if (d < 60) return '방금';
-    if (d < 3600) return Math.floor(d / 60) + '분';
-    if (d < 86400) return Math.floor(d / 3600) + '시간';
-    return Math.floor(d / 86400) + '일';
-  }
-
   // ---- rendering ----------------------------------------------------------
   // Only the 3 most-recently-updated sessions show here — the rest (and
   // project grouping) live in the session-manager window opened via 더보기,
@@ -356,9 +353,9 @@
       const row = document.createElement('div');
       row.className = 'session-row' + (s.id === settings.activeId ? ' active' : '');
       row.innerHTML = `<span class="name"></span><span class="meta"></span>
-        <button class="ibtn del" title="삭제"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`;
+        <button class="ibtn del" title="${tr('delete')}"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>`;
       row.querySelector('.name').textContent = s.title;
-      row.querySelector('.meta').textContent = timeAgo(s.updated);
+      row.querySelector('.meta').textContent = window.I18N.timeAgo(s.updated);
       row.addEventListener('click', async (e) => {
         if (e.target.closest('.del')) return;
         if (controller) return;              // don't swap sessions mid-stream
@@ -376,13 +373,15 @@
 
     const more = document.createElement('div');
     more.className = 'session-row more';
-    more.innerHTML = '<span class="name">더보기…</span>';
+    more.innerHTML = '<span class="name"></span>';
+    more.querySelector('.name').textContent = tr('moreSessions');
     more.addEventListener('click', () => window.host.openSessions());
     sessionsEl.appendChild(more);
 
     const add = document.createElement('div');
     add.id = 'new-session';
-    add.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span>새 세션</span>';
+    add.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span></span>';
+    add.querySelector('span').textContent = tr('newSession');
     add.addEventListener('click', () => { if (!controller) newSession(); });
     sessionsEl.appendChild(add);
   }
@@ -405,7 +404,7 @@
     if (!s.messages.length) {
       const e = document.createElement('div');
       e.className = 'empty';
-      e.innerHTML = '<span class="caret">›</span> 로컬 모델과 대화를 시작하세요<br><span class="caret-blink"></span>';
+      e.innerHTML = '<span class="caret">›</span> ' + escapeHtml(tr('emptyState')) + '<br><span class="caret-blink"></span>';
       messagesEl.appendChild(e);
       return;
     }
@@ -594,8 +593,9 @@
     if (empty) empty.remove();
     const d = document.createElement('div');
     d.className = 'msg reasoning';
-    d.innerHTML = `<div class="r-head"><span class="caret">›</span><span class="r-label">💭 생각 중…</span></div>
+    d.innerHTML = `<div class="r-head"><span class="caret">›</span><span class="r-label"></span></div>
                    <div class="r-body"></div>`;
+    d.querySelector('.r-label').textContent = tr('thinking');
     d.querySelector('.r-head').addEventListener('click', () => d.classList.toggle('open'));
     return d;
   }
@@ -606,7 +606,7 @@
     if (el.dataset.done) return;
     el.dataset.done = '1';
     const secs = ((Date.now() - startedAt) / 1000).toFixed(1);
-    el.querySelector('.r-label').textContent = `💭 생각함 · ${secs}초`;
+    el.querySelector('.r-label').textContent = tr('thoughtFor', { s: secs });
   }
 
   function formatCall(name, argsJsonStr) {
@@ -620,14 +620,18 @@
     let obj;
     try { obj = JSON.parse(contentJsonStr); } catch { obj = null; }
     if (!obj || typeof obj !== 'object') return '↳ ' + String(contentJsonStr || '').slice(0, 200);
-    if (obj.ok === false) return '↳ 오류: ' + (obj.error || '알 수 없는 오류');
+    if (obj.ok === false) return tr('toolErrorPrefix', { msg: obj.error || tr('toolErrorUnknown') });
     switch (name) {
       case 'read_file':
-        return '↳ ' + obj.path + ' (' + (obj.content ? obj.content.length : 0) + '자' + (obj.truncated ? ', 잘림' : '') + ')';
+        return tr('readFileResult', {
+          path: obj.path,
+          n: obj.content ? obj.content.length : 0,
+          extra: obj.truncated ? tr('truncatedSuffix') : ''
+        });
       case 'file_glob_search':
-        return '↳ 파일 ' + obj.count + '개 찾음' + (obj.truncated ? ' (더 있음)' : '');
+        return tr('globResult', { n: obj.count, extra: obj.truncated ? tr('moreExistsSuffix') : '' });
       case 'grep_search':
-        return '↳ ' + obj.count + '개 일치' + (obj.truncated ? ' (더 있음)' : '');
+        return tr('grepResult', { n: obj.count, extra: obj.truncated ? tr('moreExistsSuffix') : '' });
       case 'get_datetime':
         return '↳ ' + obj.local;
       default: {
@@ -651,10 +655,12 @@
         <div class="head"></div>
         <div class="args"></div>
         <div class="confirm-btns">
-          <button class="deny" type="button">거부</button>
-          <button class="approve" type="button">승인</button>
+          <button class="deny" type="button"></button>
+          <button class="approve" type="button"></button>
         </div>`;
-      d.querySelector('.head').textContent = '🔧 ' + name + ' 실행할까요?';
+      d.querySelector('.deny').textContent = tr('confirmDeny');
+      d.querySelector('.approve').textContent = tr('confirmApprove');
+      d.querySelector('.head').textContent = tr('confirmHead', { name });
       d.querySelector('.args').textContent = JSON.stringify(argsObj);
       messagesEl.appendChild(d);
       if (wasNearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -739,7 +745,7 @@
     } else {
       ctxFill.style.width = '0%';
       ctxFill.classList.remove('warn', 'danger');
-      ctxText.textContent = formatTokenCount(sessionContextTokens) + ' 토큰';
+      ctxText.textContent = tr('ctxTokensSuffix', { n: formatTokenCount(sessionContextTokens) });
     }
   }
 
@@ -756,14 +762,14 @@
   // (visible content, reasoning, and tool-call argument JSON alike), since
   // llama.cpp/OpenAI usage accounting doesn't split those out.
   function usageLiveText(n) {
-    return '생성 중 · 완료 ~' + n.toLocaleString() + ' 토큰';
+    return tr('usageLive', { n: n.toLocaleString() });
   }
   function usageFinalText(usage, liveTokens) {
     const parts = [];
-    if (typeof usage?.prompt_tokens === 'number') parts.push('프롬프트 ' + usage.prompt_tokens.toLocaleString());
-    if (typeof usage?.completion_tokens === 'number') parts.push('완료 ' + usage.completion_tokens.toLocaleString());
+    if (typeof usage?.prompt_tokens === 'number') parts.push(tr('usagePromptPart', { n: usage.prompt_tokens.toLocaleString() }));
+    if (typeof usage?.completion_tokens === 'number') parts.push(tr('usageCompletionPart', { n: usage.completion_tokens.toLocaleString() }));
     if (parts.length) return parts.join(' · ');
-    return '완료 ~' + liveTokens.toLocaleString() + ' 토큰 (추정)';   // server never reported usage — keep the live estimate
+    return tr('usageFinalEstimate', { n: liveTokens.toLocaleString() });   // server never reported usage — keep the live estimate
   }
 
   // Moves a round's (already-live-updating) usage note to the end of the
@@ -812,12 +818,12 @@
     if (busy) {
       actionIcon.innerHTML = STOP_ICON;
       actionBtn.classList.add('stopping');
-      actionBtn.title = '생성 중지';
+      actionBtn.title = tr('titleStop');
       dot.className = 'busy';
     } else {
       actionIcon.innerHTML = SEND_ICON;
       actionBtn.classList.remove('stopping');
-      actionBtn.title = '전송';
+      actionBtn.title = tr('titleSend');
       ping();
     }
   }
@@ -1019,7 +1025,7 @@
       if (usageEl) usageEl.remove();
       const n = document.createElement('div');
       n.className = 'msg note';
-      n.textContent = '연결 실패: ' + base + ' — 서버 상태와 CORS를 확인하세요';
+      n.textContent = tr('connectionFailed', { base });
       messagesEl.appendChild(n);
       autoScrollMessages(true);
       return { connectionError: true };
@@ -1064,7 +1070,7 @@
       const cfg = settings.tools?.[tc.function.name];
       let toolResult;
       if (!def || !cfg?.enabled) {
-        toolResult = { ok: false, error: '이 도구는 비활성화되어 있습니다.' };
+        toolResult = { ok: false, error: tr('toolDisabled') };
       } else if (argsParseError) {
         // isBadRound()/runCompletionRoundWithRetry() already gave this round
         // a couple of silent re-tries at the completion level; if the model
@@ -1073,14 +1079,14 @@
         // it a misleading "field required" error instead of the real cause.
         // Telling it plainly that its own JSON was broken gives it something
         // it can actually act on next round.
-        toolResult = { ok: false, error: '이전 도구 호출의 arguments가 올바른 JSON이 아니었습니다(중간에 잘렸을 수 있음). 유효한 JSON으로 같은 도구를 다시 호출하세요.' };
+        toolResult = { ok: false, error: tr('badArgsJson') };
       } else {
         let proceed = true;
         if (!cfg.alwaysAllow) proceed = await confirmToolCall(tc.function.name, argsObj);
         if (!controller) return false;   // aborted while awaiting approval
         toolResult = proceed
           ? await execTool(tc.function.name, argsObj, s.id).catch(e => ({ ok: false, error: String(e?.message || e) }))
-          : { ok: false, error: '사용자가 실행을 거부했습니다.' };
+          : { ok: false, error: tr('userDenied') };
       }
 
       toolBubble(formatResult(tc.function.name, JSON.stringify(toolResult)));
@@ -1102,7 +1108,7 @@
       window.host.appendMessage(s.id, msg);
       const n = document.createElement('div');
       n.className = 'msg note';
-      n.textContent = '— 중지됨 —';
+      n.textContent = tr('stoppedNote');
       messagesEl.appendChild(n);
     } else {
       result.target.remove();
@@ -1146,7 +1152,7 @@
   }
 
   function finalizeFinal(s, result) {
-    const finalText = result.content || '(빈 응답)';
+    const finalText = result.content || tr('emptyResponse');
     setMsgContent(result.target, finalText);
     const msg = { role: 'assistant', content: finalText };
     s.messages.push(msg);
@@ -1180,7 +1186,7 @@
         if (result.usageEl) result.usageEl.remove();
         const n = document.createElement('div');
         n.className = 'msg note';
-        n.textContent = '서버 오류: ' + (result.detail || 'HTTP 오류') + ' — 재시도 후에도 반복됨';
+        n.textContent = tr('serverErrorNote', { detail: result.detail || tr('httpErrorFallback') });
         messagesEl.appendChild(n);
         autoScrollMessages(true);
         controller = null; setBusy(false); return;
@@ -1195,7 +1201,7 @@
           if (result.content) {
             const n = document.createElement('div');
             n.className = 'msg note';
-            n.textContent = '— 중지됨 —';
+            n.textContent = tr('stoppedNote');
             messagesEl.appendChild(n);
           } else {
             result.target.remove();
@@ -1214,7 +1220,7 @@
     if (outcome === 'cap') {
       const n = document.createElement('div');
       n.className = 'msg note';
-      n.textContent = '— 도구 호출 한도(' + maxToolRounds + '회) 도달 —';
+      n.textContent = tr('toolRoundCapNote', { n: maxToolRounds });
       messagesEl.appendChild(n);
     }
 
@@ -1464,13 +1470,21 @@
     window.host.onStoreChanged(async (info) => {
       if (info?.scope === 'settings') {
         const prevActiveId = settings.activeId;
+        const prevLang = settings.language;
         settings = await window.host.getSettings();
+        const langChanged = (settings.language || 'ko') !== (prevLang || 'ko');
+        if (langChanged) {
+          window.I18N.setLang(settings.language || 'ko');
+          window.I18N.applyDom(document);
+        }
         renderEndpoint();
         fetchServerNCtx();
         await refreshMcpTools();
         if (settings.activeId !== prevActiveId) {
           session = await window.host.getSession(settings.activeId);
           resetContextUsage();
+        }
+        if (settings.activeId !== prevActiveId || langChanged) {
           renderSessions();
           renderMessages();
         }

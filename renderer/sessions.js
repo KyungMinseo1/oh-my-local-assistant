@@ -1,5 +1,6 @@
 (() => {
   const $ = (id) => document.getElementById(id);
+  const t = window.I18N.t;
 
   const closeBtn = $('close-btn');
   const maximizeBtn = $('maximize-btn'), titlebarEl = $('titlebar');
@@ -12,14 +13,6 @@
   let projects = [];
   let activeId = null;
 
-  function timeAgo(ts) {
-    const d = Math.floor((Date.now() - ts) / 1000);
-    if (d < 60) return '방금';
-    if (d < 3600) return Math.floor(d / 60) + '분';
-    if (d < 86400) return Math.floor(d / 3600) + '시간';
-    return Math.floor(d / 86400) + '일';
-  }
-
   // ---- session row (shared by both tabs) -----------------------------------
   // Clicking the row switches the active session but leaves this window open,
   // so the user can keep organizing/switching without reopening it.
@@ -28,13 +21,13 @@
     row.className = 'session-row' + (s.id === activeId ? ' active' : '');
     row.innerHTML = `<span class="name"></span><span class="meta"></span>`;
     row.querySelector('.name').textContent = s.title;
-    row.querySelector('.meta').textContent = timeAgo(s.updated);
+    row.querySelector('.meta').textContent = window.I18N.timeAgo(s.updated);
 
     if (opts.showProjectSelect) {
       const sel = document.createElement('select');
       sel.className = 'proj-select';
       const optNone = document.createElement('option');
-      optNone.value = ''; optNone.textContent = '미분류';
+      optNone.value = ''; optNone.textContent = t('unclassified');
       sel.appendChild(optNone);
       projects.forEach(p => {
         const o = document.createElement('option');
@@ -52,7 +45,7 @@
 
     const delBtn = document.createElement('button');
     delBtn.className = 'del';
-    delBtn.title = '삭제';
+    delBtn.title = t('delete');
     delBtn.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
     delBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteSession(s.id); });
     row.appendChild(delBtn);
@@ -80,7 +73,7 @@
     if (!sorted.length) {
       const e = document.createElement('div');
       e.className = 'project-empty';
-      e.textContent = '세션이 없습니다.';
+      e.textContent = t('noSessions');
       allListEl.appendChild(e);
       return;
     }
@@ -95,11 +88,11 @@
     header.className = 'project-header';
     header.innerHTML = `<span class="pname"></span><span class="count"></span>`;
     header.querySelector('.pname').textContent = name;
-    header.querySelector('.count').textContent = sessionsInGroup.length + '개';
+    header.querySelector('.count').textContent = t('countSuffix', { n: sessionsInGroup.length });
     if (onDelete) {
       const del = document.createElement('button');
       del.className = 'del-project';
-      del.title = '프로젝트 삭제';
+      del.title = t('deleteProjectTitle');
       del.innerHTML = '<svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
       del.addEventListener('click', onDelete);
       header.appendChild(del);
@@ -108,7 +101,7 @@
     if (!sessionsInGroup.length) {
       const e = document.createElement('div');
       e.className = 'project-empty';
-      e.textContent = '없음';
+      e.textContent = t('noneInGroup');
       group.appendChild(e);
     } else {
       sessionsInGroup.forEach(s => renderSessionRow(group, s, { showProjectSelect: true }));
@@ -128,7 +121,7 @@
     const unclassified = sessions
       .filter(s => !s.projectId || !knownIds.has(s.projectId))
       .sort((a, b) => b.updated - a.updated);
-    groupsEl.appendChild(renderProjectGroup('미분류', unclassified, null));
+    groupsEl.appendChild(renderProjectGroup(t('unclassified'), unclassified, null));
   }
 
   // ---- mutations --------------------------------------------------------
@@ -193,7 +186,7 @@
   const RESTORE_ICON = '<rect x="4" y="8" width="12" height="12" rx="1"/><path d="M8 8V5a1 1 0 0 1 1-1h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3"/>';
   function setMaximizeIcon(isMax) {
     maximizeBtn.querySelector('svg').innerHTML = isMax ? RESTORE_ICON : MAXIMIZE_ICON;
-    maximizeBtn.title = isMax ? '이전 크기로' : '최대화';
+    maximizeBtn.title = isMax ? t('restoreSize') : t('maximize');
   }
   maximizeBtn.addEventListener('click', () => window.host.toggleMaximize());
   titlebarEl.addEventListener('dblclick', (e) => {
@@ -209,10 +202,13 @@
     activeId = settings.activeId;
     sessions = sessionList;
     projects = projectList;
+    window.I18N.setLang(settings.language || 'ko');
+    window.I18N.applyDom(document);
   }
 
   // Picks up changes made elsewhere (e.g. a session deleted from the main
-  // widget's inline drawer) while this window is left open.
+  // widget's inline drawer, or the language changed in the settings window)
+  // while this window is left open.
   if (window.host.onStoreChanged) {
     window.host.onStoreChanged(async () => {
       await load();
