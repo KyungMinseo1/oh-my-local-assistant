@@ -9,7 +9,6 @@
 [![Electron](https://img.shields.io/badge/electron-31.x-47848F?logo=electron&logoColor=white)](package.json)
 [![No build step](https://img.shields.io/badge/build%20step-none-blue)](#directory-layout)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/KyungMinseo1/oh-my-local-assistant/pulls)
-[![Stars](https://img.shields.io/github/stars/KyungMinseo1/oh-my-local-assistant?style=social)](https://github.com/KyungMinseo1/oh-my-local-assistant/stargazers)
 
 [한국어](README.ko.md) · [Quick Start](#quick-start) · [Features](#features) · [Architecture](#architecture)
 
@@ -176,11 +175,3 @@ Storage is SQLite, not a JSON blob. `db.js` owns every read and write, and which
 
 > [!WARNING]
 > This was never designed for remote use. Workspace tools only ever see the filesystem of whichever machine is actually running the Electron process.
-
----
-
-<div align="center">
-
-[![Star History Chart](https://api.star-history.com/svg?repos=KyungMinseo1/oh-my-local-assistant&type=Date)](https://star-history.com/#KyungMinseo1/oh-my-local-assistant&Date)
-
-</div>
