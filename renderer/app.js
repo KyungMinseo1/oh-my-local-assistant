@@ -284,7 +284,9 @@
   //
   // Lives only for the app's lifetime (MCP connections reset on restart too)
   // and is cheap enough (a handful of strings per session) that it's never
-  // pruned.
+  // pruned — except in commitMessageEdit, where a delete/regenerate can remove
+  // the very turn that called tool_search, so the schemas it unlocked no
+  // longer have a discovering turn left to justify staying in every request.
   const activeMcpToolNamesBySession = new Map(); // sessionId -> Set<toolName>
   function activeToolSetFor(sessionId) {
     let set = activeMcpToolNamesBySession.get(sessionId);
@@ -313,7 +315,7 @@
   // on the same signal is what used to make one server crowd out the rest.
   function tokenize(s) { return (s || '').toLowerCase().match(/[a-z0-9가-힣]+/g) || []; }
 
-  const PER_SERVER = 5;    // matches returned per (server, query) pair
+  const DEFAULT_PER_SERVER = 10;    // matches returned per (server, query) pair — overridable via settings.mcpPerServer
   const MAX_SEARCHES = 8;  // sanity guard on one call's `searches` array, not a feature limit
 
   function enabledMcpTools() {
@@ -415,7 +417,7 @@
         })
         .filter(x => x.score > 0)
         .sort((a, b) => b.score - a.score)
-        .slice(0, PER_SERVER)
+        .slice(0, settings.mcpPerServer || DEFAULT_PER_SERVER)
         .map(x => x.t);
       return { server, query, tools };
     });
@@ -670,6 +672,7 @@
     await window.host.replaceMessages(s.id, s.messages);
     touchSession(s);
     retitle(s);
+    activeMcpToolNamesBySession.delete(s.id);   // the turn that discovered these may be gone now
     resetContextUsage();
     renderMessages();
     renderSessions();

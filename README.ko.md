@@ -79,7 +79,7 @@ npm run build     # → dist/*.exe (NSIS)
 | 일반 | BASE URL(기본값 `http://127.0.0.1:8080/v1`), 모델명, MAX TOKENS |
 | 시스템 프롬프트 | 모든 요청 앞에 붙는다. 세션 히스토리에는 저장 안 됨 |
 | 워크스페이스 & 도구 | 모델이 만질 수 있는 폴더, 도구별 사용 여부 · 항상 허용 토글 |
-| MCP 서버 | `{ "이름": { "command": ..., "args": [...] } }` 형태의 JSON — 세션과 무관한 전역 설정 |
+| MCP 서버 | `{ "이름": { "command": ..., "args": [...] } }`(stdio) 또는 `{ "이름": { "type": "http", "url": ... } }`(streamable HTTP) 형태의 JSON — 세션과 무관한 전역 설정 |
 
 여기서 바꾼 건 전부 로컬 DB에 바로 저장된다:
 
@@ -132,7 +132,7 @@ flowchart LR
     Preload["preload.js<br/>window.host 브리지"]
     Main["main.js<br/>Electron 메인 프로세스"]
     DB[("SQLite<br/>sessions.db")]
-    MCP["MCP 서버<br/>(stdio)"]
+    MCP["MCP 서버<br/>(stdio 또는 HTTP)"]
     LLM[("/v1 서버<br/>llama-server 등")]
 
     Widget <--> Preload

@@ -290,9 +290,11 @@
       <div class="pane" data-cat="mcp">
         <h2 data-i18n="paneMcpH2"></h2>
         <label for="mcp-servers" data-i18n="labelMcpServers"></label>
-        <textarea id="mcp-servers" rows="7" class="mono" placeholder='{"server-name": {"command": "npx", "args": ["-y", "pkg"]}}' spellcheck="false"></textarea>
+        <textarea id="mcp-servers" rows="7" class="mono" placeholder='{"server-name": {"command": "npx", "args": ["-y", "pkg"]}, "http-server-name": {"type": "http", "url": "http://localhost:8080/mcp"}}' spellcheck="false"></textarea>
         <div id="mcp-error"></div>
         <div id="mcp-status"></div>
+        <label for="mcp-per-server" data-i18n="labelMcpPerServer"></label>
+        <input id="mcp-per-server" type="text" inputmode="numeric" placeholder="10" spellcheck="false">
         <label data-i18n="labelMcpTools"></label>
         <div id="mcp-tools-list"></div>
       </div>

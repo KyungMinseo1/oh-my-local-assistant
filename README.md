@@ -81,7 +81,7 @@ There are no environment variables to set for the app itself — everything live
 | General | Base URL (defaults to `http://127.0.0.1:8080/v1`), model name, max tokens |
 | System prompt | Prepended to every request; not saved into session history |
 | Workspace & tools | Which folder the model can touch, and per-tool enable / always-allow toggles |
-| MCP servers | A JSON blob of `{ "name": { "command": ..., "args": [...] } }` — global, not per-session |
+| MCP servers | A JSON blob of `{ "name": { "command": ..., "args": [...] } }` (stdio) or `{ "name": { "type": "http", "url": ... } }` (streamable HTTP) — global, not per-session |
 
 Everything you set gets written straight to a local database:
 
@@ -134,7 +134,7 @@ flowchart LR
     Preload["preload.js<br/>window.host bridge"]
     Main["main.js<br/>Electron main process"]
     DB[("SQLite<br/>sessions.db")]
-    MCP["MCP servers<br/>(stdio)"]
+    MCP["MCP servers<br/>(stdio or HTTP)"]
     LLM[("Your /v1 server<br/>llama-server, etc.")]
 
     Widget <--> Preload

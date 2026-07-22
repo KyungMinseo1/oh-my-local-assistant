@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { Client } = require('@modelcontextprotocol/sdk/client/index.js');
 const { StdioClientTransport } = require('@modelcontextprotocol/sdk/client/stdio.js');
+const { StreamableHTTPClientTransport } = require('@modelcontextprotocol/sdk/client/streamableHttp.js');
 
 // ---- Window geometry ------------------------------------------------------
 // The window is a transparent, click-through canvas that covers the whole work
@@ -380,7 +381,8 @@ const TOOL_IMPLS = {
 
 // ---- MCP servers ------------------------------------------------------------
 // User-configured external tool servers (the `mcpServers` dict from Settings),
-// connected over stdio via the official SDK. Each server's tools are exposed
+// connected over stdio (spawned command) or streamable HTTP (`type: "http"`
+// + `url`) via the official SDK. Each server's tools are exposed
 // to the model namespaced as `mcp__<server>__<tool>`, alongside the built-in
 // TOOL_IMPLS above — this is genuinely arbitrary local code the user chose to
 // run (their own command/args), unlike the sandboxed, read-only tools above.
@@ -392,12 +394,16 @@ const mcpConfigs = new Map();    // server name -> JSON.stringify(cfg) it's curr
 
 async function connectMcpServer(name, cfg) {
   try {
-    const transport = new StdioClientTransport({
-      command: cfg.command,
-      args: cfg.args || [],
-      env: { ...process.env, ...(cfg.env || {}) },
-      cwd: cfg.cwd
-    });
+    const transport = cfg.type === 'http'
+      ? new StreamableHTTPClientTransport(new URL(cfg.url), {
+          requestInit: cfg.headers ? { headers: cfg.headers } : undefined
+        })
+      : new StdioClientTransport({
+          command: cfg.command,
+          args: cfg.args || [],
+          env: { ...process.env, ...(cfg.env || {}) },
+          cwd: cfg.cwd
+        });
     const client = new Client({ name: 'local-assistant', version: '0.1.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
@@ -478,11 +484,15 @@ function broadcastMcpStatus() {
 // the whole batch, so a slow server (e.g. a first-run `npx` package fetch)
 // doesn't leave every other already-connected server looking like it never
 // showed up.
-// Only the fields that actually determine the stdio connection. A server entry
-// may also carry a `description` (used by the renderer's tool_search catalog),
-// and hashing the whole config would make editing that prose kill and respawn a
-// live server process for no reason.
-const connKey = (cfg) => JSON.stringify({ command: cfg.command, args: cfg.args, env: cfg.env, cwd: cfg.cwd });
+// Only the fields that actually determine the connection (stdio or http). A
+// server entry may also carry a `description` (used by the renderer's
+// tool_search catalog), and hashing the whole config would make editing that
+// prose kill and respawn a live server process for no reason.
+const connKey = (cfg) => JSON.stringify({
+  type: cfg.type,
+  command: cfg.command, args: cfg.args, env: cfg.env, cwd: cfg.cwd,
+  url: cfg.url, headers: cfg.headers
+});
 
 async function syncMcpServers(mcpServers) {
   const entries = Object.entries(mcpServers || {});

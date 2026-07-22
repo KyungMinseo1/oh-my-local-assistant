@@ -36,6 +36,7 @@
   const skillsListEl = $('skills-list'), newSkillBtn = $('new-skill-btn'), refreshSkillsBtn = $('refresh-skills-btn');
   const workspacePathInput = $('workspace-path'), pickWorkspaceBtn = $('pick-workspace'), toolsListEl = $('tools-list');
   const mcpServersInput = $('mcp-servers'), mcpStatusEl = $('mcp-status'), mcpErrorEl = $('mcp-error'), mcpToolsListEl = $('mcp-tools-list');
+  const mcpPerServerInput = $('mcp-per-server');
   const saveBtn = $('save-settings'), saveStatusEl = $('save-status'), closeBtn = $('close-btn');
   const maximizeBtn = $('maximize-btn'), titlebarEl = $('titlebar');
 
@@ -437,6 +438,7 @@
     systemPromptInput.value = settings.systemPrompt || '';
     workspacePathInput.value = settings.workspace || '';
     mcpServersInput.value = JSON.stringify(settings.mcpServers || {}, null, 2);
+    mcpPerServerInput.value = settings.mcpPerServer || '';
     mcpErrorEl.textContent = '';
     languageSelect.value = settings.language || 'ko';
     fontScaleSelect.value = String(settings.fontScale || 1);
@@ -469,6 +471,7 @@
 
     const mt = parseInt(maxTokensInput.value.trim(), 10);
     const mtr = parseInt(maxToolRoundsInput.value.trim(), 10);
+    const mps = parseInt(mcpPerServerInput.value.trim(), 10);
 
     saveBtn.disabled = true;
     saveStatusEl.textContent = t('statusConnectingMcp');
@@ -481,6 +484,7 @@
       maxToolRounds: Number.isFinite(mtr) && mtr > 0 ? mtr : null,
       systemPrompt: systemPromptInput.value.trim(),
       mcpServers,
+      mcpPerServer: Number.isFinite(mps) && mps > 0 ? mps : null,
       tools: settings.tools
     });
     saveBtn.disabled = false;
