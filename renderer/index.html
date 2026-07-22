@@ -86,6 +86,18 @@
     max-width:240px;
   }
   #header .title .caret{ color:var(--accent); }
+  /* MCP tools the model has opened via tool_search this session. That set only
+     grows (see activeMcpToolNamesBySession in app.js), so this is the one place
+     the accumulated request cost is visible instead of silently climbing. */
+  #active-tools-badge{
+    flex-shrink:0; cursor:default;
+    padding:1px 6px; border-radius:999px;
+    background:var(--bg); border:1px solid var(--border);
+    font-size:calc(10px * var(--font-scale)); color:var(--text-muted);
+  }
+  /* Scoped like #ctx-row.hidden above — there is no global .hidden rule in this
+     stylesheet, so an unscoped class="hidden" would leave an empty pill visible. */
+  #active-tools-badge.hidden{ display:none; }
   .btns{ display:flex; gap:6px; }
   .ibtn{
     background:none; border:none; cursor:pointer; color:var(--text-muted);
@@ -389,7 +401,7 @@
 
   <div id="panel">
     <div id="header">
-      <div class="title"><span class="caret">›</span><span id="endpoint-label">127.0.0.1:8080</span></div>
+      <div class="title"><span class="caret">›</span><span id="endpoint-label">127.0.0.1:8080</span><span id="active-tools-badge" class="hidden"></span></div>
       <div class="btns">
         <button class="ibtn" id="sessions-btn" data-i18n-title="titleSessions">
           <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>

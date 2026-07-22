@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('host', {
   runTool: (name, args) => ipcRenderer.invoke('tool:run', { name, args }),
   pickWorkspace: () => ipcRenderer.invoke('dialog:pickWorkspace'),
   listMcpTools: () => ipcRenderer.invoke('mcp:listTools'),
+  listMcpServers: () => ipcRenderer.invoke('mcp:listServers'),
   reloadMcpServers: (mcpServers) => ipcRenderer.invoke('mcp:reload', mcpServers),
   onMcpStatusChanged: (cb) => ipcRenderer.on('mcp:statusChanged', (_e, payload) => cb(payload)),
   openSettings: () => ipcRenderer.send('settings:open'),

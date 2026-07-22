@@ -401,12 +401,18 @@ async function connectMcpServer(name, cfg) {
     const client = new Client({ name: 'local-assistant', version: '0.1.0' });
     await client.connect(transport);
     const { tools } = await client.listTools();
-    mcpClients.set(name, { client, tools, error: null });
+    // The server's own self-description, from the optional `instructions`
+    // field of the initialize response. Only readable off the Client after
+    // connect, so it's captured here rather than looked up on demand — the
+    // renderer uses it as the middle tier of the tool_search server catalog
+    // (see mcpServerCatalog() in app.js).
+    const instructions = client.getInstructions() || '';
+    mcpClients.set(name, { client, tools, instructions, error: null });
     for (const t of tools) {
       mcpToolIndex.set(MCP_PREFIX + name + '__' + t.name, { server: name, toolName: t.name });
     }
   } catch (e) {
-    mcpClients.set(name, { client: null, tools: [], error: String(e?.message || e) });
+    mcpClients.set(name, { client: null, tools: [], instructions: '', error: String(e?.message || e) });
   }
 }
 
@@ -438,13 +444,26 @@ function listMcpToolsForRenderer() {
   return out;
 }
 
+// Server-level view of the same connections, kept separate from
+// listMcpToolsForRenderer()'s flat tool array (which settings.js consumes as-is)
+// rather than folding both into one payload. app.js needs this to build the
+// server catalog that tool_search's schema carries — see mcpServerCatalog().
+function listMcpServersForRenderer() {
+  return [...mcpClients].map(([name, entry]) => ({
+    name,
+    instructions: entry.instructions || '',
+    toolCount: entry.tools.length,
+    error: entry.error || null
+  }));
+}
+
 // Pushed to every window (not just "the others" — unlike broadcastChange,
 // the window that triggered a reload needs these live updates too, since its
 // own mcp:reload call doesn't resolve until every server has settled) so the
 // settings window can show "연결 중..." for servers still connecting instead
 // of just omitting them until the whole batch finishes.
 function broadcastMcpStatus() {
-  const payload = { connecting: [...mcpConnecting], tools: listMcpToolsForRenderer() };
+  const payload = { connecting: [...mcpConnecting], tools: listMcpToolsForRenderer(), servers: listMcpServersForRenderer() };
   for (const w of BrowserWindow.getAllWindows()) w.webContents.send('mcp:statusChanged', payload);
 }
 
@@ -459,6 +478,12 @@ function broadcastMcpStatus() {
 // the whole batch, so a slow server (e.g. a first-run `npx` package fetch)
 // doesn't leave every other already-connected server looking like it never
 // showed up.
+// Only the fields that actually determine the stdio connection. A server entry
+// may also carry a `description` (used by the renderer's tool_search catalog),
+// and hashing the whole config would make editing that prose kill and respawn a
+// live server process for no reason.
+const connKey = (cfg) => JSON.stringify({ command: cfg.command, args: cfg.args, env: cfg.env, cwd: cfg.cwd });
+
 async function syncMcpServers(mcpServers) {
   const entries = Object.entries(mcpServers || {});
   const nextNames = new Set(entries.map(([name]) => name));
@@ -471,7 +496,7 @@ async function syncMcpServers(mcpServers) {
   const toConnect = entries.filter(([name, cfg]) => {
     const existing = mcpClients.get(name);
     const unhealthy = !existing || !existing.client;
-    return unhealthy || mcpConfigs.get(name) !== JSON.stringify(cfg);
+    return unhealthy || mcpConfigs.get(name) !== connKey(cfg);
   });
 
   toConnect.forEach(([name]) => mcpConnecting.add(name));
@@ -479,7 +504,7 @@ async function syncMcpServers(mcpServers) {
   await Promise.all(toConnect.map(async ([name, cfg]) => {
     await disconnectMcpServer(name);   // drop a stale connection for this name before reconnecting
     await connectMcpServer(name, cfg);
-    mcpConfigs.set(name, JSON.stringify(cfg));
+    mcpConfigs.set(name, connKey(cfg));
     mcpConnecting.delete(name);
     broadcastMcpStatus();
   }));
@@ -503,6 +528,7 @@ async function runMcpTool(qualifiedName, args) {
 }
 
 ipcMain.handle('mcp:listTools', () => listMcpToolsForRenderer());
+ipcMain.handle('mcp:listServers', () => listMcpServersForRenderer());
 ipcMain.handle('mcp:reload', async (_e, mcpServers) => {
   await syncMcpServers(mcpServers);
   return listMcpToolsForRenderer();

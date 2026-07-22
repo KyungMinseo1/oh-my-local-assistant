@@ -10,6 +10,7 @@
   const sessionsEl = $('sessions'), sessionsBtn = $('sessions-btn');
   const settingsBtn = $('settings-btn');
   const endpointLabel = $('endpoint-label');
+  const activeToolsBadge = $('active-tools-badge');
   const presetBtn = $('preset-btn'), presetBtnLabel = $('preset-btn-label'), presetMenu = $('preset-menu');
   const messagesEl = $('messages'), inputEl = $('input'), actionBtn = $('action'), actionIcon = $('action-icon');
   const closeBtn = $('close-btn'), resizeHandle = $('resize-handle');
@@ -129,11 +130,15 @@
         type: 'function',
         function: {
           name: 'tool_search',
-          description: '이름을 모르는 MCP 도구를 찾을 때 사용합니다. 필요한 기능을 자연어로 설명하면 관련된 도구를 찾아 반환하고, 이후 라운드부터 그 도구를 바로 호출할 수 있게 됩니다. 검색은 의미 기반이 아니라 단어 매칭이며 도구 설명은 대부분 영어라 놓칠 수 있으므로, 응답에는 항상 현재 연결된 MCP 서버 이름 목록(available_mcp_servers)도 함께 옵니다 — 검색 결과가 비어 있어도 그 목록에 관련 서버가 있으면 실제로는 도구가 존재하는 것이니 "그런 기능이 없다"고 단정하지 말고 한국어/영어 키워드를 섞어 다시 검색하세요 (예: "캘린더 일정 calendar event schedule").',
+          // The request-time schema is rebuilt by toolSearchSpec() with the live
+          // server catalog appended to this description and the `searches`
+          // parameter attached — what's declared here is only the part that
+          // doesn't depend on which servers happen to be connected.
+          description: '이름을 모르는 MCP 도구를 찾을 때 사용합니다. 검색된 도구는 이후 라운드부터 바로 호출할 수 있게 됩니다. 검색은 의미 기반이 아니라 단어 매칭이며 도구 설명은 대부분 영어라 놓칠 수 있으므로, 응답에는 항상 현재 연결된 MCP 서버 이름 목록(available_mcp_servers)도 함께 옵니다 — 검색 결과가 비어 있어도 그 목록에 관련 서버가 있으면 실제로는 도구가 존재하는 것이니 "그런 기능이 없다"고 단정하지 마세요.',
           parameters: {
             type: 'object',
-            properties: { query: { type: 'string', description: '찾고자 하는 기능 설명. 한국어/영어 키워드를 여러 개 함께 넣으면 더 잘 찾습니다 (예: "이메일 검색 email search", "캘린더 일정 calendar event")' } },
-            required: ['query']
+            properties: {},
+            required: []
           }
         }
       }
@@ -260,10 +265,23 @@
   // window.host.onStoreChanged() in the init section below.
   let mcpTools = [];
 
+  // Server-level metadata for the same connections ({name, instructions,
+  // toolCount, error}), fetched alongside mcpTools — the tool list alone has
+  // no place to carry a server's own self-description. Feeds mcpServerCatalog().
+  let mcpServerMeta = [];
+
   // Which MCP tools' full schemas are currently allowed into the request's
   // `tools` array, keyed by session id. Populated by tool_search results
   // (see execTool) and consulted by enabledToolSpecs() — this is the lazy-
   // loading mechanism that keeps unused MCP schemas out of every request.
+  //
+  // This set only ever grows: each tool_search *adds* its hits to whatever the
+  // session already discovered. That's deliberate and load-bearing — a tool
+  // missed by one query has to stay reachable by searching the same server
+  // again with different keywords, so capping the accumulated set would
+  // eventually make new tools permanently unopenable. Cost is visible instead
+  // of capped, via the header badge (renderActiveTools).
+  //
   // Lives only for the app's lifetime (MCP connections reset on restart too)
   // and is cheap enough (a handful of strings per session) that it's never
   // pruned.
@@ -288,23 +306,119 @@
   }
 
   // Lightweight lexical matching (token overlap, not embeddings) behind
-  // tool_search — at the scale of tens/hundreds of MCP tools this is enough,
-  // and it needs no embedding model served alongside the chat model.
+  // tool_search — it needs no embedding model served alongside the chat model.
+  // Matching this weak only holds up because tool_search narrows to one server
+  // before scoring: within a single server's handful of tools, word overlap is
+  // enough, whereas ranking every connected server's tools against each other
+  // on the same signal is what used to make one server crowd out the rest.
   function tokenize(s) { return (s || '').toLowerCase().match(/[a-z0-9가-힣]+/g) || []; }
 
-  function searchMcpTools(query, limit = 5) {
-    const qTokens = new Set(tokenize(query));
-    if (!qTokens.size) return [];
-    const enabledMcp = mcpTools.filter(t => settings.tools?.[t.name]?.enabled);
-    const scored = enabledMcp
-      .map(t => {
-        const text = t.name + ' ' + t.label + ' ' + (t.schema.function.description || '');
-        const score = tokenize(text).reduce((n, tok) => n + (qTokens.has(tok) ? 1 : 0), 0);
-        return { t, score };
-      })
-      .filter(x => x.score > 0)
-      .sort((a, b) => b.score - a.score);
-    return scored.slice(0, limit).map(x => x.t);
+  const PER_SERVER = 5;    // matches returned per (server, query) pair
+  const MAX_SEARCHES = 8;  // sanity guard on one call's `searches` array, not a feature limit
+
+  function enabledMcpTools() {
+    return mcpTools.filter(t => settings.tools?.[t.name]?.enabled);
+  }
+
+  // The server catalog tool_search carries in its own schema, so picking a
+  // server is a decision the model makes from data rather than by guessing at
+  // tool names.
+  //
+  // MCP has no server-level description — a stdio server is configured with
+  // nothing but {command, args, env}, and clients that expose every tool at
+  // once never need one, since each tool carries its own description from
+  // tools/list. That per-tool description is the one thing the spec does
+  // guarantee, so the default here is synthesized from it rather than asked of
+  // the user: summarizing what a server's tools say about themselves is a
+  // decent description of the server. The two tiers above it are overrides for
+  // when that isn't good enough, not setup steps.
+  const SERVER_DESC_LIMIT = 220;
+  function firstClause(s, cap) {
+    // Tool descriptions usually lead with a one-line summary and then continue
+    // into usage caveats; only the summary is useful at server-picking scale.
+    // Full-width CJK stops end a sentence on their own — those scripts don't put
+    // a space after them — while an ASCII '.' only counts when whitespace
+    // follows, so "e.g.", "1.5" and "from:" don't get cut mid-token.
+    const head = (s || '').trim().split(/\n|(?<=[。！？])|(?<=[.!?])\s|(?<=니다)\s/)[0] || '';
+    return head.length > cap ? head.slice(0, cap).trim() + '…' : head.trim();
+  }
+  // Below this many characters a clause is a mid-word fragment rather than a
+  // summary, and costs more than it explains.
+  const CLAUSE_MIN = 40;
+  function toolDigest(tools, budget) {
+    // Only annotate names when each tool can carry a clause long enough to mean
+    // something. Real servers run 10-25 tools, where the per-tool share drops to
+    // ~10-20 chars and every clause gets cut mid-phrase — and servers whose
+    // descriptions share a boilerplate prefix ("Notion | …") spend that whole
+    // share on the prefix. At that size the bare names (send_email,
+    // search_emails, …) identify the server better than truncated fragments do.
+    const perTool = Math.floor(budget / Math.max(tools.length, 1));
+    const annotate = perTool >= CLAUSE_MIN;
+    const parts = [];
+    let left = budget;
+    for (const t of tools) {
+      const clause = annotate ? firstClause(t.schema.function.description, Math.min(perTool, 70)) : '';
+      const piece = clause ? `${t.toolName}(${clause})` : t.toolName;
+      if (parts.length && left - piece.length < 0) break;
+      parts.push(piece);
+      left -= piece.length + 2;
+    }
+    const rest = tools.length - parts.length;
+    return parts.join(', ') + (rest > 0 ? ` 외 ${rest}개` : '');
+  }
+  function mcpServerCatalog() {
+    const byServer = new Map();
+    for (const t of enabledMcpTools()) {
+      if (!byServer.has(t.server)) byServer.set(t.server, []);
+      byServer.get(t.server).push(t);
+    }
+    return [...byServer].sort(([a], [b]) => a.localeCompare(b)).map(([name, tools]) => {
+      const manual = (settings.mcpServers?.[name]?.description || '').trim();
+      const reported = (mcpServerMeta.find(s => s.name === name)?.instructions || '').trim();
+      let description = manual;
+      if (!description) {
+        // `instructions` and the digest are combined rather than ranked. Servers
+        // that set it often set something like "Excel MCP Server for
+        // manipulating Excel files" — it names the domain but says nothing about
+        // what the server can actually do, so the tool digest still earns the
+        // rest of the budget. A long `instructions` fills the budget on its own.
+        const parts = [];
+        let budget = SERVER_DESC_LIMIT;
+        if (reported) {
+          const head = reported.length > budget ? reported.slice(0, budget) + '…' : reported;
+          parts.push(head);
+          budget -= head.length;
+        }
+        if (budget > 60) parts.push(toolDigest(tools, budget));
+        description = parts.join(' · ');
+      }
+      return { name, description, toolCount: tools.length };
+    });
+  }
+
+  // Runs one lexical search per {server, query} pair, each scoped to that
+  // server's own tools. The per-server quota is the point: a single global
+  // top-N lets one large server's tools crowd every other server out of the
+  // results entirely, so the model concludes an integration it *is* connected
+  // to has no relevant tool. Returns [{server, query, tools}] so the caller can
+  // show the model which query produced which hits.
+  function searchMcpTools(searches) {
+    const pool = enabledMcpTools();
+    return searches.map(({ server, query }) => {
+      const qTokens = new Set(tokenize(query));
+      const tools = !qTokens.size ? [] : pool
+        .filter(t => t.server === server)
+        .map(t => {
+          const text = t.name + ' ' + t.label + ' ' + (t.schema.function.description || '');
+          const score = tokenize(text).reduce((n, tok) => n + (qTokens.has(tok) ? 1 : 0), 0);
+          return { t, score };
+        })
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, PER_SERVER)
+        .map(x => x.t);
+      return { server, query, tools };
+    });
   }
 
   // Keyword matching alone can miss a real tool entirely (e.g. a Korean
@@ -313,8 +427,32 @@
   // few and cheap, so tool_search always includes this list alongside its
   // matches as a cross-check the model can visually scan.
   function availableMcpServers() {
-    const enabledMcp = mcpTools.filter(t => settings.tools?.[t.name]?.enabled);
-    return [...new Set(enabledMcp.map(t => t.server))].sort();
+    return [...new Set(enabledMcpTools().map(t => t.server))].sort();
+  }
+
+  // Small models routinely flatten a nested argument shape back into the flat
+  // one they saw in older prompting, so `{query: "..."}` is accepted and fanned
+  // out across every connected server rather than failing the call outright.
+  // Unknown server names are dropped here and reported back, so a hallucinated
+  // name degrades into "that one found nothing" instead of an opaque error.
+  function normalizeSearches(argsObj, catalog) {
+    const known = new Set(catalog.map(s => s.name));
+    const raw = Array.isArray(argsObj?.searches) ? argsObj.searches : [];
+    const ignored = [];
+    const searches = [];
+    for (const entry of raw.slice(0, MAX_SEARCHES)) {
+      const server = typeof entry?.server === 'string' ? entry.server : '';
+      const query = typeof entry?.query === 'string' ? entry.query : '';
+      if (!known.has(server)) { if (server) ignored.push(server); continue; }
+      searches.push({ server, query: query || argsObj?.query || '' });
+    }
+    if (!searches.length) {
+      const fallbackQuery = (typeof argsObj?.query === 'string' ? argsObj.query : '').trim();
+      if (fallbackQuery) {
+        return { searches: catalog.map(s => ({ server: s.name, query: fallbackQuery })), ignored, fannedOut: true };
+      }
+    }
+    return { searches, ignored, fannedOut: false };
   }
 
   function applyMcpToolList(list) {
@@ -325,6 +463,7 @@
         name: t.name,
         label: '[' + t.server + '] ' + t.toolName,
         server: t.server,
+        toolName: t.toolName,   // kept unqualified for the server catalog's tool-name digest
         schema: { type: 'function', function: { name: t.name, description, parameters: applyMcpSchemaPatches(t.server, t.toolName, t.inputSchema) } }
       };
     });
@@ -338,7 +477,9 @@
   // (that now happens in the settings window), it just needs the current
   // tool list to build enabledToolSpecs() for the chat loop.
   async function refreshMcpTools() {
-    applyMcpToolList(await window.host.listMcpTools());
+    const [tools, servers] = await Promise.all([window.host.listMcpTools(), window.host.listMcpServers()]);
+    applyMcpToolList(tools);
+    mcpServerMeta = servers;
   }
 
   // ---- persistence --------------------------------------------------------
@@ -790,6 +931,13 @@
         return tr('grepResult', { n: obj.count, extra: obj.truncated ? tr('moreExistsSuffix') : '' });
       case 'get_datetime':
         return '↳ ' + obj.local;
+      case 'tool_search': {
+        // The default case would stringify the whole per-server payload and cut
+        // it off at 200 chars, showing nothing legible. What matters at a glance
+        // is which server yielded how many, so summarize to that.
+        const parts = Object.entries(obj.results_by_server || {}).map(([server, r]) => server + ' ' + r.tools.length);
+        return '↳ ' + (parts.length ? parts.join(' · ') : tr('toolSearchNoHit'));
+      }
       default: {
         const j = JSON.stringify(obj);
         return '↳ ' + (j.length > 200 ? j.slice(0, 200) + '…' : j);
@@ -855,6 +1003,17 @@
       const u = new URL(settings.baseUrl || DEFAULT_BASE);
       endpointLabel.textContent = u.host + (u.pathname !== '/' ? u.pathname : '');
     } catch { endpointLabel.textContent = settings.baseUrl; }
+  }
+
+  // The tool_search active set is never pruned, so nothing else would tell the
+  // user their requests are carrying twenty MCP schemas. Session-scoped, like
+  // the set itself — switching sessions shows that session's count.
+  function renderActiveTools() {
+    const names = session ? [...activeToolSetFor(session.id)] : [];
+    activeToolsBadge.classList.toggle('hidden', !names.length);
+    if (!names.length) return;
+    activeToolsBadge.textContent = tr('activeMcpTools', { n: names.length });
+    activeToolsBadge.title = tr('activeMcpToolsTitle', { n: names.length, list: names.join('\n') });
   }
 
   // Lets the current session pick a named system-prompt preset (managed in
@@ -966,9 +1125,13 @@
 
   // sessionContextTokens tracks only the currently-open session; switching or
   // reloading a session clears it until its next exchange reports fresh usage.
+  // Every session switch already funnels through here, and the tool_search
+  // active set is session-scoped the same way the token count is, so the badge
+  // rides along rather than needing its own hook at each call site.
   function resetContextUsage() {
     sessionContextTokens = null;
     renderContextBar();
+    renderActiveTools();
   }
 
   // Text for the small per-round usage note (see runCompletionRound, which
@@ -1049,7 +1212,51 @@
     if (controller) { controller.abort(); controller = null; }
   }
 
-  // Built-ins stay raw (only 4, not worth lazy-loading). MCP tools are gated
+  // Builds tool_search's request-time schema around the live server catalog.
+  // The catalog has to be generated per request rather than declared in
+  // TOOL_DEFS: it depends on which servers are connected right now and which
+  // of their tools are enabled. Returns a fresh object every time — TOOL_DEFS
+  // entries are shared constants that enabledToolSpecs() pushes by reference,
+  // so mutating the stored schema would leak a stale catalog into every later
+  // request.
+  //
+  // The server `enum` isn't decoration: llama.cpp turns a JSON-Schema enum into
+  // a decoding grammar, so a small model physically cannot emit a server name
+  // that isn't connected.
+  function toolSearchSpec(catalog) {
+    const base = TOOL_DEFS.find(t => t.name === 'tool_search').schema.function;
+    const lines = catalog.map(s => `- ${s.name} (${s.toolCount}개): ${s.description}`).join('\n');
+    return {
+      type: 'function',
+      function: {
+        name: base.name,
+        description: base.description
+          + '\n\n사용법: 아래 목록에서 필요해 보이는 서버를 고르고, 서버마다 그 서버의 성격에 맞는 쿼리를 따로 만들어 searches에 함께 넣으세요. 한 번에 여러 서버를 검색할 수 있습니다.'
+          + '\n원하는 도구가 결과에 없으면 같은 서버에 다른 키워드로 다시 검색하세요 — 검색 결과는 계속 누적되므로 앞서 찾은 도구는 그대로 쓸 수 있습니다.'
+          + '\n\n현재 연결된 MCP 서버:\n' + lines,
+        parameters: {
+          type: 'object',
+          properties: {
+            searches: {
+              type: 'array',
+              description: '검색할 (서버, 쿼리) 쌍의 목록.',
+              items: {
+                type: 'object',
+                properties: {
+                  server: { type: 'string', enum: catalog.map(s => s.name), description: '검색할 MCP 서버 이름' },
+                  query: { type: 'string', description: '그 서버 안에서 찾을 기능 설명. 단어 매칭이므로 한국어/영어 키워드를 함께 넣으면 더 잘 찾습니다 (예: "캘린더 일정 calendar event")' }
+                },
+                required: ['server', 'query']
+              }
+            }
+          },
+          required: ['searches']
+        }
+      }
+    };
+  }
+
+  // Built-ins stay raw (8 of them, not worth lazy-loading). MCP tools are gated
   // behind tool_search: only schemas the model has already discovered via a
   // search in this session are included, so an unused MCP server's schemas
   // never bloat every single request. Turning tool_search off in Settings
@@ -1058,10 +1265,10 @@
     const specs = TOOL_DEFS
       .filter(t => t.name !== 'tool_search' && settings.tools?.[t.name]?.enabled)
       .map(t => t.schema);
-    const enabledMcp = mcpTools.filter(t => settings.tools?.[t.name]?.enabled);
+    const enabledMcp = enabledMcpTools();
     if (enabledMcp.length) {
       if (settings.tools?.tool_search?.enabled) {
-        specs.push(TOOL_DEFS.find(t => t.name === 'tool_search').schema);
+        specs.push(toolSearchSpec(mcpServerCatalog()));
         const active = activeToolSetFor(s.id);
         for (const t of enabledMcp) if (active.has(t.name)) specs.push(t.schema);
       } else {
@@ -1080,14 +1287,37 @@
       return { ok: true, iso: now.toISOString(), local: now.toString() };
     }
     if (name === 'tool_search') {
-      const results = searchMcpTools(argsObj?.query || '');
+      const catalog = mcpServerCatalog();
+      const { searches, ignored, fannedOut } = normalizeSearches(argsObj, catalog);
+      const rounds = searchMcpTools(searches);
       const active = activeToolSetFor(sessionId);
-      results.forEach(r => active.add(r.name));
+      const results_by_server = {};
+      let hits = 0;
+      for (const { server, query, tools } of rounds) {
+        tools.forEach(t => active.add(t.name));
+        hits += tools.length;
+        // Keyed per server so the model can tell which of its queries worked;
+        // an empty bucket is information too (that server has nothing matching
+        // *those* words), which a flat merged list would hide.
+        results_by_server[server] = {
+          query,
+          tools: tools.map(t => ({ name: t.name, description: t.schema.function.description }))
+        };
+      }
+      renderActiveTools();
+      const empties = rounds.filter(r => !r.tools.length).map(r => r.server);
+      const notes = [];
+      if (!searches.length) notes.push('검색할 서버를 지정하지 않았습니다. available_mcp_servers 중에서 골라 searches에 {server, query} 형태로 넣어 다시 호출하세요.');
+      else if (empties.length) notes.push(`다음 서버에서는 일치하는 도구를 찾지 못했습니다: ${empties.join(', ')}. 그 서버에 기능이 없다고 단정하지 말고 한국어/영어 키워드를 바꿔 같은 서버를 다시 검색하세요 — 지금까지 찾은 도구는 그대로 유지되고 새 결과가 추가됩니다.`);
+      if (ignored.length) notes.push(`연결되어 있지 않아 무시한 서버: ${ignored.join(', ')}`);
+      if (fannedOut) notes.push('서버를 지정하지 않아 연결된 모든 서버를 같은 쿼리로 검색했습니다. 서버별로 쿼리를 나눠 넣으면 더 정확합니다.');
       return {
         ok: true,
-        results: results.map(r => ({ name: r.name, description: r.schema.function.description })),
+        results_by_server,
+        total_found: hits,
         available_mcp_servers: availableMcpServers(),
-        note: results.length ? undefined : '일치하는 도구를 찾지 못했습니다. available_mcp_servers에 관련 서버가 있는지 먼저 확인하고, 있다면 그 서버 이름이나 다른 키워드로 다시 검색하세요.'
+        ignored_servers: ignored.length ? ignored : undefined,
+        note: notes.length ? notes.join(' ') : undefined
       };
     }
     if (name === 'read_skill') {
