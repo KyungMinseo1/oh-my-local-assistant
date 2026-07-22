@@ -161,8 +161,9 @@
     background:var(--bg-deep); border:1px solid var(--border); border-radius:8px;
     padding:8px; display:flex; flex-direction:column; gap:6px;
   }
-  .preset-row-head{ display:flex; align-items:center; gap:6px; }
+  .preset-row-head{ display:flex; align-items:center; gap:10px; }
   .preset-row-head .preset-name{ flex:1; min-width:0; }
+  .preset-row-head .switch{ margin-right:2px; }
   .preset-row .del-preset{
     flex-shrink:0; color:var(--text-muted); background:none; border:none;
     cursor:pointer; padding:4px; border-radius:6px; display:flex; align-items:center;
@@ -174,10 +175,17 @@
   .preset-add-row{ display:flex; gap:6px; }
   .preset-add-row input{ flex:1; min-width:0; }
   .hint{ font-size:calc(10.5px * var(--font-scale)); color:var(--text-muted); margin:-4px 0 6px; }
-  #add-preset-btn{
+  #add-preset-btn, #new-skill-btn{
     background:var(--accent); color:#0B0D12; border:none; font-size:calc(11px * var(--font-scale)); font-weight:600;
-    padding:7px 12px; border-radius:7px; cursor:pointer; white-space:nowrap;
+    padding:7px 12px; border-radius:7px; cursor:pointer; white-space:nowrap; align-self:flex-start;
   }
+  .skills-label-row{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .icon-btn{
+    background:none; border:none; color:var(--text-muted); cursor:pointer;
+    padding:4px; border-radius:6px; display:flex; align-items:center;
+  }
+  .icon-btn:hover{ color:var(--text-primary); background:rgba(255,255,255,.07); }
+  .icon-btn svg{ width:13px; height:13px; }
 
   #footer{
     flex-shrink:0; padding:10px 14px; border-top:1px solid var(--border);
@@ -258,13 +266,14 @@
       <div class="pane" data-cat="skills">
         <h2 data-i18n="paneSkillsH2"></h2>
         <p class="hint" data-i18n="hintSkills"></p>
-        <label data-i18n="labelSkills"></label>
-        <div id="skills-list"></div>
-        <div class="preset-add-row">
-          <input id="new-skill-name" type="text" data-i18n-placeholder="placeholderNewSkillName" spellcheck="false">
-          <input id="new-skill-desc" type="text" data-i18n-placeholder="placeholderNewSkillDesc" spellcheck="false">
-          <button id="add-skill-btn" type="button" data-i18n="btnAddSkill"></button>
+        <div class="skills-label-row">
+          <label data-i18n="labelSkills"></label>
+          <button id="refresh-skills-btn" type="button" class="icon-btn" data-i18n-title="btnRefreshSkills">
+            <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.3-6.4M21 12a9 9 0 0 1-15.3 6.4"/><path d="M18 3v5h-5M6 21v-5h5"/></svg>
+          </button>
         </div>
+        <div id="skills-list"></div>
+        <button id="new-skill-btn" type="button" data-i18n="btnNewSkill"></button>
       </div>
 
       <div class="pane" data-cat="workspace">

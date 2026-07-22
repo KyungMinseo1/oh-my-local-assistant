@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('host', {
   createSkill: (name, description, body) => ipcRenderer.invoke('skill:create', name, description, body),
   updateSkill: (id, partial) => ipcRenderer.invoke('skill:update', id, partial),
   deleteSkill: (id) => ipcRenderer.invoke('skill:delete', id),
+  getSkillFile: (id, relPath) => ipcRenderer.invoke('skill:getFile', id, relPath),
   dbPath: () => ipcRenderer.invoke('db:path'),
   setIgnoreMouse: (ignore) => ipcRenderer.send('window:setIgnoreMouse', ignore),
   onResetBubble: (cb) => ipcRenderer.on('bubble:reset', () => cb()),

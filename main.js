@@ -118,6 +118,10 @@ ipcMain.handle('skill:delete', (e, id) => {
   skills.deleteSkill(id);
   broadcastChange(e.sender, { scope: 'skill' });
 });
+ipcMain.handle('skill:getFile', (_e, id, relPath) => {
+  try { return { ok: true, content: skills.getSkillFile(id, relPath) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
 
 ipcMain.handle('db:path', () => db.dbPath());
 

@@ -125,10 +125,13 @@
         type: 'function',
         function: {
           name: 'read_skill',
-          description: '시스템 프롬프트에 나열된 사용 가능한 스킬 중 하나의 전체 지침을 불러옵니다. 목록의 설명(description)이 현재 작업과 관련 있어 보이면 이 도구로 그 스킬의 본문을 읽고 그 지침을 따르세요.',
+          description: '시스템 프롬프트에 나열된 사용 가능한 스킬 중 하나의 전체 지침을 불러옵니다. 목록의 설명(description)이 현재 작업과 관련 있어 보이면 이 도구로 그 스킬의 본문을 읽고 그 지침을 따르세요.\n\npath를 생략하고 호출하면 메인 지침(SKILL.md 본문)과 함께, 그 스킬 폴더에 딸린 추가 참조 파일 목록(files)이 있으면 그것도 함께 반환됩니다. 본문 내용이나 files 목록에서 현재 작업과 관련된 참조 파일(예: references/xxx.md)이 보이면, 같은 name에 path 인자로 그 파일 경로를 넣어 다시 호출해 내용을 마저 불러오세요 — 필요하지 않은 참조 파일까지 미리 다 불러올 필요는 없습니다.',
           parameters: {
             type: 'object',
-            properties: { name: { type: 'string', description: '불러올 스킬의 이름 (스킬 목록에 나온 이름과 정확히 일치해야 함)' } },
+            properties: {
+              name: { type: 'string', description: '불러올 스킬의 이름 (스킬 목록에 나온 이름과 정확히 일치해야 함)' },
+              path: { type: 'string', description: '스킬 폴더 안의 추가 참조 파일 상대 경로 (예: references/playwright-tests.md). 생략하면 메인 지침(SKILL.md 본문)과 참조 파일 목록을 반환합니다.' }
+            },
             required: ['name']
           }
         }
@@ -243,6 +246,15 @@
 
   function findToolDef(name) {
     return TOOL_DEFS.find(t => t.name === name) || mcpTools.find(t => t.name === name);
+  }
+
+  // Skills toggled off in Settings (settings.skillsEnabled[id] === false) are
+  // filtered out here so they're invisible to the model both in the system-
+  // prompt index (apiMessages) and via read_skill lookup (execTool) — a
+  // disabled skill isn't just "discouraged", it doesn't exist as far as the
+  // request is concerned.
+  function enabledSkillList() {
+    return skillList.filter(sk => settings.skillsEnabled?.[sk.id] !== false);
   }
 
   // Lightweight lexical matching (token overlap, not embeddings) behind
@@ -977,11 +989,22 @@
       };
     }
     if (name === 'read_skill') {
-      const entry = skillList.find(s => s.name === (argsObj?.name || ''));
+      const entry = enabledSkillList().find(s => s.name === (argsObj?.name || ''));
       if (!entry) return { ok: false, error: '해당 이름의 스킬을 찾을 수 없습니다: ' + (argsObj?.name || '') };
+      const relPath = argsObj?.path;
+      if (relPath) {
+        const res = await window.host.getSkillFile(entry.id, relPath);
+        if (!res?.ok) return { ok: false, error: res?.error || '참조 파일을 불러오지 못했습니다: ' + relPath };
+        return { ok: true, name: entry.name, path: relPath, content: res.content };
+      }
       const skill = await window.host.getSkill(entry.id);
       if (!skill) return { ok: false, error: '스킬을 불러오지 못했습니다: ' + entry.name };
-      return { ok: true, name: skill.name, content: skill.body };
+      return {
+        ok: true,
+        name: skill.name,
+        content: skill.body,
+        files: skill.files && skill.files.length ? skill.files : undefined
+      };
     }
     return window.host.runTool(name, argsObj);
   }
@@ -1015,8 +1038,9 @@
     // each skill's full body. The model loads a skill's actual instructions
     // on demand via read_skill only when one looks relevant, so having many
     // skills costs a few lines here rather than bloating every request.
-    if (settings.tools?.read_skill?.enabled && skillList.length) {
-      const lines = skillList.map(sk => `- ${sk.name}: ${sk.description}`).join('\n');
+    const activeSkills = settings.tools?.read_skill?.enabled ? enabledSkillList() : [];
+    if (activeSkills.length) {
+      const lines = activeSkills.map(sk => `- ${sk.name}: ${sk.description}`).join('\n');
       parts.push(`사용 가능한 스킬 목록 (관련 있어 보이면 read_skill로 전체 지침을 불러오세요):\n${lines}`);
     }
     return parts.length ? [{ role: 'system', content: parts.join('\n\n') }, ...msgs] : msgs;

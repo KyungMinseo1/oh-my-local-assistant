@@ -28,7 +28,7 @@
   const fontScaleSelect = $('font-scale');
   const systemPromptInput = $('system-prompt');
   const presetsListEl = $('presets-list'), newPresetNameInput = $('new-preset-name'), addPresetBtn = $('add-preset-btn');
-  const skillsListEl = $('skills-list'), newSkillNameInput = $('new-skill-name'), newSkillDescInput = $('new-skill-desc'), addSkillBtn = $('add-skill-btn');
+  const skillsListEl = $('skills-list'), newSkillBtn = $('new-skill-btn'), refreshSkillsBtn = $('refresh-skills-btn');
   const workspacePathInput = $('workspace-path'), pickWorkspaceBtn = $('pick-workspace'), toolsListEl = $('tools-list');
   const mcpServersInput = $('mcp-servers'), mcpStatusEl = $('mcp-status'), mcpErrorEl = $('mcp-error'), mcpToolsListEl = $('mcp-tools-list');
   const saveBtn = $('save-settings'), saveStatusEl = $('save-status'), closeBtn = $('close-btn');
@@ -49,6 +49,15 @@
     });
     mcpToolList.filter(t => !t.error).forEach(t => {
       if (!settings.tools[t.name]) settings.tools[t.name] = { enabled: true, alwaysAllow: false };
+    });
+  }
+
+  // A skill discovered on disk but never seen before defaults to enabled —
+  // same "newly discovered defaults on" convention as MCP tools above.
+  function ensureSkillDefaults() {
+    if (!settings.skillsEnabled) settings.skillsEnabled = {};
+    skills.forEach(sk => {
+      if (settings.skillsEnabled[sk.id] === undefined) settings.skillsEnabled[sk.id] = true;
     });
   }
 
@@ -320,9 +329,14 @@
   newPresetNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addPreset(); });
 
   // ---- skills ---------------------------------------------------------------
-  // Each skill is a name + one-line description (always shown to the model,
-  // see apiMessages() in app.js) plus a body of full instructions loaded only
-  // on demand via the read_skill tool. Edits save on blur, same as presets.
+  // Skills are discovered from disk (window.host.listSkills() scans
+  // <userData>/skills/*/SKILL.md — dropping a folder in externally already
+  // works), not authored through a form here. Each row just reflects what's
+  // on disk: name + one-line description (always shown to the model, see
+  // apiMessages() in app.js) plus a body of full instructions loaded only on
+  // demand via read_skill. Edits save on blur, same as presets. The enable
+  // switch is purely an app-side preference (settings.skillsEnabled), not
+  // part of the skill file itself.
   function renderSkillsList() {
     skillsListEl.innerHTML = '';
     if (!skills.length) {
@@ -338,6 +352,7 @@
       row.innerHTML = `
         <div class="preset-row-head">
           <input class="preset-name" type="text" spellcheck="false">
+          <label class="switch" title="${t('toolSwitchEnabledTitle')}"><input type="checkbox" class="skill-enabled"><span class="track"></span></label>
           <button class="del-preset" type="button" title="${t('delete')}">
             <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
@@ -346,9 +361,11 @@
         <textarea class="preset-prompt" rows="5" data-i18n-placeholder="placeholderSkillBody" spellcheck="false"></textarea>`;
       window.I18N.applyDom(row);
       const nameInput = row.querySelector('.preset-name');
+      const enabledCb = row.querySelector('.skill-enabled');
       const descInput = row.querySelector('.skill-desc');
       const bodyInput = row.querySelector('.preset-prompt');
       nameInput.value = sk.name;
+      enabledCb.checked = settings.skillsEnabled[sk.id] !== false;
       descInput.value = sk.description;
       bodyInput.value = sk.body;
       nameInput.addEventListener('blur', () => {
@@ -356,6 +373,10 @@
         if (!name || name === sk.name) { nameInput.value = sk.name; return; }
         sk.name = name;
         window.host.updateSkill(sk.id, { name });
+      });
+      enabledCb.addEventListener('change', () => {
+        settings.skillsEnabled[sk.id] = enabledCb.checked;
+        window.host.updateSettings({ skillsEnabled: settings.skillsEnabled });
       });
       descInput.addEventListener('blur', () => {
         const description = descInput.value.trim();
@@ -371,25 +392,37 @@
       row.querySelector('.del-preset').addEventListener('click', async () => {
         await window.host.deleteSkill(sk.id);
         skills = skills.filter(x => x.id !== sk.id);
+        delete settings.skillsEnabled[sk.id];
+        window.host.updateSettings({ skillsEnabled: settings.skillsEnabled });
         renderSkillsList();
       });
       skillsListEl.appendChild(row);
     });
   }
 
-  async function addSkill() {
-    const name = newSkillNameInput.value.trim();
-    if (!name) return;
-    const description = newSkillDescInput.value.trim();
-    const sk = await window.host.createSkill(name, description, '');
+  // Creates a blank skill folder the user then edits in place (name/
+  // description/body all editable inline above) — the only in-app authoring
+  // path; everything else comes from dropping a folder on disk (see refresh).
+  async function newSkill() {
+    const sk = await window.host.createSkill(t('defaultNewSkillName'), '', '');
     skills.push(sk);
-    newSkillNameInput.value = '';
-    newSkillDescInput.value = '';
+    settings.skillsEnabled[sk.id] = true;
+    window.host.updateSettings({ skillsEnabled: settings.skillsEnabled });
     renderSkillsList();
   }
-  addSkillBtn.addEventListener('click', addSkill);
-  newSkillNameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') newSkillDescInput.focus(); });
-  newSkillDescInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSkill(); });
+  newSkillBtn.addEventListener('click', newSkill);
+
+  // Re-scans <userData>/skills/ — picks up folders dropped in externally
+  // (e.g. via File Explorer) while this window is already open, since those
+  // don't trigger the store:changed broadcast (that only fires on this app's
+  // own IPC writes).
+  async function refreshSkills() {
+    const skillIndex = await window.host.listSkills();
+    skills = await Promise.all(skillIndex.map(sk => window.host.getSkill(sk.id)));
+    ensureSkillDefaults();
+    renderSkillsList();
+  }
+  refreshSkillsBtn.addEventListener('click', refreshSkills);
 
   function populateFields() {
     baseUrlInput.value = settings.baseUrl || DEFAULT_BASE;
@@ -526,6 +559,7 @@
     if (typeof settings.systemPrompt !== 'string') settings.systemPrompt = '';
     if (!settings.mcpServers || typeof settings.mcpServers !== 'object') settings.mcpServers = {};
     if (!settings.tools) settings.tools = {};
+    if (!settings.skillsEnabled) settings.skillsEnabled = {};
     if (typeof settings.fontScale !== 'number') settings.fontScale = 1;
     document.documentElement.style.setProperty('--font-scale', settings.fontScale);
 
@@ -534,6 +568,7 @@
     presets = await window.host.listPresets();
     const skillIndex = await window.host.listSkills();
     skills = await Promise.all(skillIndex.map(sk => window.host.getSkill(sk.id)));
+    ensureSkillDefaults();
 
     window.I18N.setLang(settings.language || 'ko');
     window.I18N.applyDom(document);

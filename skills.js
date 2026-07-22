@@ -23,6 +23,43 @@ function skillFile(id) {
   return path.join(skillsDir, id, 'SKILL.md');
 }
 
+function skillRoot(id) {
+  return path.join(skillsDir, id);
+}
+
+// Lists any extra files bundled inside a skill's folder besides SKILL.md
+// itself (e.g. a references/*.md doc a SKILL.md body links to), as relative
+// paths — real SKILL.md conventions ship reference docs alongside the main
+// file rather than inlining everything.
+function listSkillFiles(id) {
+  const root = skillRoot(id);
+  const out = [];
+  function walk(dir, prefix) {
+    let entries;
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) walk(path.join(dir, e.name), rel);
+      else if (rel !== 'SKILL.md') out.push(rel);
+    }
+  }
+  walk(root, '');
+  return out.sort();
+}
+
+// Reads one of those bundled files, bounded to the skill's own folder the
+// same way resolveInWorkspace bounds workspace tools in main.js — rejects
+// "../" traversal and absolute paths pointing elsewhere.
+function getSkillFile(id, relPath) {
+  const root = skillRoot(id);
+  const resolved = path.resolve(root, relPath || '.');
+  const rootWithSep = root.endsWith(path.sep) ? root : root + path.sep;
+  if (resolved !== root && !resolved.startsWith(rootWithSep)) {
+    throw new Error('경로가 스킬 폴더를 벗어납니다: ' + relPath);
+  }
+  return fs.readFileSync(resolved, 'utf-8');
+}
+
 // name/description are kept single-line (frontmatter here is line-based, not
 // real YAML) — collapse any newlines a user pastes in.
 function oneLine(s) {
@@ -68,7 +105,7 @@ function getSkill(id) {
   let text;
   try { text = fs.readFileSync(skillFile(id), 'utf-8'); } catch { return null; }
   const { name, description, body } = parse(text);
-  return { id, name, description, body };
+  return { id, name, description, body, files: listSkillFiles(id) };
 }
 
 function createSkill(name, description, body) {
@@ -94,4 +131,4 @@ function deleteSkill(id) {
   fs.rmSync(path.join(skillsDir, id), { recursive: true, force: true });
 }
 
-module.exports = { init, listSkills, getSkill, createSkill, updateSkill, deleteSkill };
+module.exports = { init, listSkills, getSkill, createSkill, updateSkill, deleteSkill, getSkillFile };
