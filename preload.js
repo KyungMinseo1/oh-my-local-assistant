@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('host', {
   setSessionPreset: (id, presetId) => ipcRenderer.invoke('session:setPreset', id, presetId),
   appendMessage: (id, message) => ipcRenderer.invoke('session:appendMessage', id, message),
   deleteLastMessage: (id) => ipcRenderer.invoke('session:deleteLastMessage', id),
+  replaceMessages: (id, messages) => ipcRenderer.invoke('session:replaceMessages', id, messages),
   setActiveSession: (id) => ipcRenderer.invoke('session:setActive', id),
   listProjects: () => ipcRenderer.invoke('project:list'),
   createProject: (name) => ipcRenderer.invoke('project:create', name),

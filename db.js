@@ -248,6 +248,32 @@ function setActiveSession(id) {
   updateSettings({ activeId: id });
 }
 
+// Rewrites a session's whole message list (delete-all + re-insert with fresh
+// seq), used by the transcript's delete/regenerate actions — those remove a
+// turn from the middle or truncate the tail, and renumbering from 0 here keeps
+// seq contiguous so the renderer's array index always matches its row. Whole
+// sessions are bounded by the model's context window, so rewriting all rows is
+// cheaper than the bookkeeping a partial delete would need.
+function replaceMessages(sessionId, messages) {
+  const del = db.prepare('DELETE FROM messages WHERE session_id = ?');
+  const ins = db.prepare('INSERT INTO messages (session_id, seq, role, content, tool_calls, tool_call_id) VALUES (?, ?, ?, ?, ?, ?)');
+  const touch = db.prepare('UPDATE sessions SET updated = ? WHERE id = ?');
+  const updated = Date.now();
+  db.transaction(() => {
+    del.run(sessionId);
+    (messages || []).forEach((m, i) => {
+      ins.run(
+        sessionId, i, m.role,
+        m.content ?? null,
+        m.tool_calls ? JSON.stringify(m.tool_calls) : null,
+        m.tool_call_id ?? null
+      );
+    });
+    touch.run(updated, sessionId);
+  })();
+  return { updated };
+}
+
 // Removes the most recently appended message in a session — used when an
 // aborted request leaves an orphaned user turn with no response attached.
 function deleteLastMessage(sessionId) {
@@ -303,7 +329,7 @@ function deletePreset(id) {
 module.exports = {
   init, dbPath,
   getSettings, updateSettings,
-  listSessions, getSession, createSession, deleteSession, renameSession, setSessionProject, setSessionPreset, appendMessage, deleteLastMessage, setActiveSession,
+  listSessions, getSession, createSession, deleteSession, renameSession, setSessionProject, setSessionPreset, appendMessage, deleteLastMessage, replaceMessages, setActiveSession,
   listProjects, createProject, deleteProject,
   listPresets, createPreset, updatePreset, deletePreset
 };

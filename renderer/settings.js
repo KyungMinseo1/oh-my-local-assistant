@@ -9,6 +9,7 @@
   const BUILTIN_TOOLS = [
     { name: 'get_datetime', labelKey: 'toolLabelDatetime' },
     { name: 'read_file', labelKey: 'toolLabelReadFile' },
+    { name: 'write_file', labelKey: 'toolLabelWriteFile' },
     { name: 'file_glob_search', labelKey: 'toolLabelGlobSearch' },
     { name: 'grep_search', labelKey: 'toolLabelGrepSearch' },
     { name: 'tool_search', labelKey: 'toolLabelToolSearch' },
@@ -16,11 +17,15 @@
     { name: 'run_command', labelKey: 'toolLabelRunCommand' }
   ];
 
-  // Executes arbitrary shell commands — unlike every other built-in above
-  // (sandboxed, read-only), this defaults off and non-always-allow even once
-  // enabled, so every call still needs an inline approval unless the user
-  // explicitly opts in. Mirrors the same default app.js's load() applies.
-  const RISKY_TOOLS = new Set(['run_command']);
+  // The two built-ins above that aren't sandboxed read-only tools get
+  // stricter defaults than the rest: run_command executes arbitrary shell
+  // commands, so it stays off until the user turns it on and still needs an
+  // inline approval per call afterwards; write_file can overwrite files, so
+  // it's on but always asks. Mirrors the defaults app.js's load() applies.
+  const TOOL_DEFAULTS = {
+    run_command: { enabled: false, alwaysAllow: false },
+    write_file: { enabled: true, alwaysAllow: false }
+  };
 
   const baseUrlInput = $('base-url'), modelInput = $('model-name'), maxTokensInput = $('max-tokens');
   const maxToolRoundsInput = $('max-tool-rounds');
@@ -44,7 +49,7 @@
     if (!settings.tools) settings.tools = {};
     BUILTIN_TOOLS.forEach(t => {
       if (!settings.tools[t.name]) {
-        settings.tools[t.name] = RISKY_TOOLS.has(t.name) ? { enabled: false, alwaysAllow: false } : { enabled: true, alwaysAllow: true };
+        settings.tools[t.name] = { ...(TOOL_DEFAULTS[t.name] || { enabled: true, alwaysAllow: true }) };
       }
     });
     mcpToolList.filter(t => !t.error).forEach(t => {

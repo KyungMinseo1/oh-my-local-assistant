@@ -64,6 +64,26 @@
       }
     },
     {
+      name: 'write_file',
+      label: '파일 쓰기',
+      schema: {
+        type: 'function',
+        function: {
+          name: 'write_file',
+          description: '워크스페이스 폴더 안에 텍스트 파일을 UTF-8로 씁니다. 없는 상위 폴더는 자동으로 만들어집니다. 파일을 만들거나 내용을 바꿀 때는 run_command로 echo/리다이렉트(>, >>)나 Set-Content를 쓰지 말고 반드시 이 도구를 쓰세요 — 셸 리다이렉트는 UTF-8이 아닌 코드 페이지로 저장되어 한글이 깨지고, 긴 내용은 명령줄 길이 제한에도 걸립니다.',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: '워크스페이스 기준 상대 경로' },
+              content: { type: 'string', description: '파일에 쓸 내용. append가 false면 파일 전체가 이 내용으로 바뀝니다 (기존 내용은 사라짐).' },
+              append: { type: 'boolean', description: 'true면 기존 파일 끝에 이어붙입니다. 기본값 false (덮어쓰기). 큰 파일을 여러 번에 나눠 쓸 때 첫 호출은 false, 이후 호출은 true로 쓰세요.' }
+            },
+            required: ['path', 'content']
+          }
+        }
+      }
+    },
+    {
       name: 'file_glob_search',
       label: '파일 이름 검색',
       schema: {
@@ -144,7 +164,7 @@
         type: 'function',
         function: {
           name: 'run_command',
-          description: '워크스페이스 폴더 안에서 셸 명령을 실행하고 표준출력/표준에러/종료 코드를 반환합니다. 임의의 명령을 실행할 수 있는 강력한 도구이므로 신중하게 사용하세요. 매 호출은 완전히 새로운 셸에서 실행되므로 cd로 이동한 디렉터리나 환경변수 등은 다음 호출로 이어지지 않습니다 — 여러 단계를 한 번에 실행하려면 한 명령 안에서 && 로 연결하거나 cwd 인자를 쓰세요.\n\n바로 실행부터 하지 마세요. 먼저: (1) 파일/폴더 경로가 필요한 작업이면 이름이나 패턴만 보고 위치를 추측하지 말고 이전 도구 결과(file_glob_search, read_file 등)에 실제로 나온 경로를 다시 확인하거나, 확실하지 않으면 dir/ls로 먼저 확인한다. (2) 무엇을 어떤 순서로 실행할지 단계별 계획을 먼저 세운다. (3) 계획대로 한 단계씩 실행하고, 각 결과(특히 stderr와 exitCode)를 확인한 뒤 다음 단계로 넘어간다. "일단 실행해보고 오류 나면 그때 고치기"를 반복하지 말고, 실행 전에 경로와 순서를 먼저 확정하세요.',
+          description: '워크스페이스 폴더 안에서 셸 명령을 실행하고 표준출력/표준에러/종료 코드를 반환합니다. 임의의 명령을 실행할 수 있는 강력한 도구이므로 신중하게 사용하세요. 매 호출은 완전히 새로운 셸에서 실행되므로 cd로 이동한 디렉터리나 환경변수 등은 다음 호출로 이어지지 않습니다 — 여러 단계를 한 번에 실행하려면 한 명령 안에서 && 로 연결하거나 cwd 인자를 쓰세요.\n\n[실행 환경] 셸은 Windows cmd.exe입니다. bash가 아니므로 heredoc(<<), which, pwd, ls, touch, 2>/dev/null, $VAR, 백틱은 전부 실패합니다 — 각각 dir, where, cd, 2>nul, %VAR%로 바꿔 쓰세요. Get-ChildItem·Test-Path 같은 PowerShell 전용 명령도 cmd에서는 직접 실행되지 않습니다.\n\n[반드시 한 줄] command에 줄바꿈이 있으면 거부됩니다. cmd.exe가 첫 줄에서 명령을 끊어 아무 일도 하지 않은 채 성공(exitCode 0, 빈 출력)으로 보고되기 때문입니다. python -c "a; b; c" 처럼 세미콜론으로 잇거나, 스크립트가 길면 write_file로 .py/.ps1 파일을 만든 뒤 그 파일을 실행하세요 — 여러 줄 스크립트를 돌리는 정상적인 방법은 이것뿐입니다.\n\n[PowerShell] 필요하면 powershell -NoProfile -Command "..." 로 감싸되 역시 한 줄이어야 합니다. here-string(@\'...\'@)은 cmd를 거치면서 항상 파싱 오류가 나므로 쓰지 마세요.\n\n[파일 쓰기 금지] echo, >, >>, Set-Content로 파일을 만들지 마세요. 출력이 UTF-8이 아닌 코드 페이지(CP949)로 저장되어 한글이 전부 깨집니다. 파일 생성·수정은 예외 없이 write_file 도구를 쓰세요.\n\n[제약] 명령줄 길이는 8191자 제한이므로 긴 데이터를 명령문에 인라인하지 마세요. 실행 시간은 30초 제한입니다.\n\n[종료 코드] exitCode 9009는 "명령을 찾을 수 없음"(설치되어 있지 않음)입니다. 같은 명령을 다시 시도하지 말고 다른 이름을 쓰세요 — 예: python3이 아니라 py 또는 python. 상대 경로는 워크스페이스 기준이지만 COM 객체(Excel.Application 등)는 자체 기본 폴더를 쓰므로 반드시 절대 경로를 넘기세요.\n\n바로 실행부터 하지 마세요. 먼저: (1) 파일/폴더 경로가 필요한 작업이면 이름이나 패턴만 보고 위치를 추측하지 말고 이전 도구 결과(file_glob_search, read_file 등)에 실제로 나온 경로를 다시 확인하거나, 확실하지 않으면 dir/ls로 먼저 확인한다. (2) 무엇을 어떤 순서로 실행할지 단계별 계획을 먼저 세운다. (3) 계획대로 한 단계씩 실행하고, 각 결과(특히 stderr와 exitCode)를 확인한 뒤 다음 단계로 넘어간다. "일단 실행해보고 오류 나면 그때 고치기"를 반복하지 말고, 실행 전에 경로와 순서를 먼저 확정하세요.',
           parameters: {
             type: 'object',
             properties: {
@@ -157,6 +177,16 @@
       }
     }
   ];
+
+  // Built-ins default to {enabled: true, alwaysAllow: true} because they're
+  // sandboxed and read-only. The two that aren't get stricter defaults:
+  // run_command executes arbitrary shell commands, so it stays off until the
+  // user turns it on and still asks per call afterwards; write_file can
+  // overwrite files, so it's on but always asks. Mirrored in settings.js.
+  const TOOL_DEFAULTS = {
+    run_command: { enabled: false, alwaysAllow: false },
+    write_file: { enabled: true, alwaysAllow: false }
+  };
 
   // Per-parameter description patches for specific MCP tools, applied at
   // request time (see applyMcpSchemaPatches). A rule stated only in the
@@ -323,11 +353,7 @@
     if (!settings.tools) settings.tools = {};
     TOOL_DEFS.forEach(t => {
       if (!settings.tools[t.name]) {
-        // run_command executes arbitrary shell commands — unlike every other
-        // built-in here (sandboxed, read-only), it defaults off and, even
-        // once enabled, still requires per-call approval until the user
-        // explicitly opts into "always allow" themselves.
-        settings.tools[t.name] = t.name === 'run_command' ? { enabled: false, alwaysAllow: false } : { enabled: true, alwaysAllow: true };
+        settings.tools[t.name] = { ...(TOOL_DEFAULTS[t.name] || { enabled: true, alwaysAllow: true }) };
       }
     });
 
@@ -457,6 +483,77 @@
     if (force || isScrolledNearBottom()) messagesEl.scrollTop = messagesEl.scrollHeight;
   }
 
+  // ---- per-message actions (삭제 / 재생성) ---------------------------------
+  // Both act on a whole *turn*: a user message plus every assistant/tool
+  // message that follows it until the next user message. Deleting or re-running
+  // any smaller unit would leave a `tool` result without the assistant
+  // tool_calls turn it answers (or two user turns back to back), which the
+  // chat templates llama.cpp applies reject outright.
+  function turnStartFor(s, i) {
+    for (let k = Math.min(i, s.messages.length - 1); k >= 0; k--) {
+      if (s.messages[k].role === 'user') return k;
+    }
+    return 0;
+  }
+  function turnEndFor(s, start) {
+    let end = start + 1;
+    while (end < s.messages.length && s.messages[end].role !== 'user') end++;
+    return end;   // exclusive
+  }
+
+  const TRASH_ICON = '<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/>';
+  const REGEN_ICON = '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>';
+
+  // `index` is a position in s.messages, resolved to its turn start lazily at
+  // click time — never captured here, since a delete elsewhere in the
+  // transcript renumbers everything after it.
+  function attachMsgActions(el, index) {
+    const row = document.createElement('div');
+    row.className = 'msg-actions';
+    row.innerHTML = `
+      <button class="regen" type="button"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${REGEN_ICON}</svg></button>
+      <button class="del" type="button"><svg viewBox="0 0 24 24" stroke="currentColor" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${TRASH_ICON}</svg></button>`;
+    row.querySelector('.regen').title = tr('msgRegenerateTitle');
+    row.querySelector('.del').title = tr('msgDeleteTitle');
+    row.querySelector('.regen').addEventListener('click', () => regenerateTurn(index));
+    row.querySelector('.del').addEventListener('click', () => deleteTurn(index));
+    el.appendChild(row);
+    return el;
+  }
+
+  // Writes the (already-mutated) in-memory message list back as the session's
+  // full history. Everything downstream of a mid-transcript edit is stale —
+  // the token count, the title derived from the first user message, the
+  // drawer's ordering — so they're all refreshed together here.
+  async function commitMessageEdit(s) {
+    await window.host.replaceMessages(s.id, s.messages);
+    touchSession(s);
+    retitle(s);
+    resetContextUsage();
+    renderMessages();
+    renderSessions();
+  }
+
+  async function deleteTurn(index) {
+    if (controller) return;               // the loop owns the transcript mid-generation
+    const s = activeSession();
+    const start = turnStartFor(s, index);
+    s.messages.splice(start, turnEndFor(s, start) - start);
+    await commitMessageEdit(s);
+  }
+
+  // Keeps the turn's user message and drops its answer — plus every later turn,
+  // which was written in response to output that no longer exists.
+  async function regenerateTurn(index) {
+    if (controller) return;
+    const s = activeSession();
+    const start = turnStartFor(s, index);
+    if (s.messages[start]?.role !== 'user') return;
+    s.messages.splice(start + 1);
+    await commitMessageEdit(s);
+    await runTurn(s, { dropEmptyUserTurn: false });
+  }
+
   function renderMessages() {
     const s = activeSession();
     messagesEl.innerHTML = '';
@@ -468,10 +565,10 @@
       return;
     }
     const callIndex = {};   // tool_call_id -> {name, arguments}, built as we replay
-    s.messages.forEach(m => {
-      if (m.role === 'user') { bubbleFor('user', m.content || '', false); return; }
+    s.messages.forEach((m, i) => {
+      if (m.role === 'user') { attachMsgActions(bubbleFor('user', m.content || '', false), i); return; }
       if (m.role === 'assistant') {
-        if (m.content) bubbleFor('assistant', m.content, false);
+        if (m.content) attachMsgActions(bubbleFor('assistant', m.content, false), i);
         (m.tool_calls || []).forEach(tc => {
           callIndex[tc.id] = tc.function;
           toolBubble(formatCall(tc.function.name, tc.function.arguments), false);
@@ -723,10 +820,14 @@
       d.querySelector('.args').textContent = JSON.stringify(argsObj);
       messagesEl.appendChild(d);
       if (wasNearBottom) messagesEl.scrollTop = messagesEl.scrollHeight;
+      // The panel may be collapsed (or get collapsed while we wait), hiding the
+      // card entirely — make the bubble pulse so the request isn't missed.
+      bubble.classList.add('awaiting');
 
       const finish = (ok) => {
         d.querySelectorAll('button').forEach(b => b.disabled = true);
         d.remove();
+        bubble.classList.remove('awaiting');
         pendingConfirmResolve = null;
         resolve(ok);
       };
@@ -929,6 +1030,7 @@
 
   // ---- send / stop --------------------------------------------------------
   function setBusy(busy) {
+    document.body.classList.toggle('busy', busy);   // hides the per-message 삭제/재생성 actions
     if (busy) {
       actionIcon.innerHTML = STOP_ICON;
       actionBtn.classList.add('stopping');
@@ -1199,6 +1301,7 @@
     const assistantMsg = { role: 'assistant', content: result.content || null, tool_calls: result.toolCalls };
     s.messages.push(assistantMsg);
     window.host.appendMessage(s.id, assistantMsg);
+    if (result.content) attachMsgActions(result.target, s.messages.length - 1);
     touchSession(s);
 
     for (const tc of result.toolCalls) {
@@ -1242,12 +1345,16 @@
 
   // Partial output is kept on abort: it's usually still useful, and dropping
   // text the user already read is more confusing than marking it cut short.
-  function finalizeAbort(s, result) {
+  // `dropEmptyUserTurn` is false for a regenerate: the prompt it re-runs is
+  // pre-existing history the user asked to keep, not something this turn just
+  // added and can safely undo.
+  function finalizeAbort(s, result, dropEmptyUserTurn = true) {
     if (result.content) {
       setMsgContent(result.target, result.content);
       const msg = { role: 'assistant', content: result.content };
       s.messages.push(msg);
       window.host.appendMessage(s.id, msg);
+      attachMsgActions(result.target, s.messages.length - 1);
       const n = document.createElement('div');
       n.className = 'msg note';
       n.textContent = tr('stoppedNote');
@@ -1257,7 +1364,7 @@
       if (result.usageEl) result.usageEl.remove();
       // Only the very first round (no tool activity yet) leaves an orphaned
       // user turn with nothing else attached; later rounds have real history.
-      if (s.messages[s.messages.length - 1]?.role === 'user') {
+      if (dropEmptyUserTurn && s.messages[s.messages.length - 1]?.role === 'user') {
         s.messages.pop();
         window.host.deleteLastMessage(s.id);
         renderMessages();
@@ -1299,6 +1406,7 @@
     const msg = { role: 'assistant', content: finalText };
     s.messages.push(msg);
     window.host.appendMessage(s.id, msg);
+    attachMsgActions(result.target, s.messages.length - 1);
   }
 
   async function send() {
@@ -1310,11 +1418,18 @@
     window.host.appendMessage(s.id, { role: 'user', content: text });
     touchSession(s);
     retitle(s);
-    bubbleFor('user', text);
+    attachMsgActions(bubbleFor('user', text), s.messages.length - 1);
     autoScrollMessages(true);
     inputEl.value = ''; autoResize();
     renderSessions();
 
+    await runTurn(s);
+  }
+
+  // Everything from the request onward: shared by send() (after it appends the
+  // new user message) and regenerateTurn() (after it truncates back to an
+  // existing one), since from here on neither cares which put the prompt there.
+  async function runTurn(s, { dropEmptyUserTurn = true } = {}) {
     controller = new AbortController();
     setBusy(true);
 
@@ -1333,7 +1448,7 @@
         autoScrollMessages(true);
         controller = null; setBusy(false); return;
       }
-      if (result.aborted) { finalizeAbort(s, result); outcome = 'aborted'; break; }
+      if (result.aborted) { finalizeAbort(s, result, dropEmptyUserTurn); outcome = 'aborted'; break; }
       if (result.toolCalls.length) {
         const proceeded = await handleToolCalls(s, result);
         finalizeUsageNote(result);
@@ -1440,6 +1555,7 @@
     isOpen = forceClose ? false : !isOpen;
     if (isOpen) positionPanel();
     panel.classList.toggle('open', isOpen);
+    document.body.classList.toggle('panel-open', isOpen);   // gates the bubble's awaiting pulse
     if (isOpen) { ping(); inputEl.focus(); }
     else { sessionsEl.classList.remove('open'); }
     // The panel's bounds just shrank/grew; the cursor may now sit in what used

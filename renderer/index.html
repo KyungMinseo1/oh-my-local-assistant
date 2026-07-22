@@ -16,6 +16,7 @@
     --text-primary:#E7E9F0;
     --text-muted:#8A90A6;
     --ok:#6EE7B7;
+    --warn:#F5C36B;
     --err:#FF8A8A;
     --mono: ui-monospace, 'Cascadia Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
     --sans: 'Segoe UI', system-ui, -apple-system, sans-serif;
@@ -107,7 +108,7 @@
   #ctx-row.hidden{ display:none; }
   #ctx-bar-track{ flex:1; height:4px; border-radius:2px; background:var(--bg-sunken); overflow:hidden; }
   #ctx-bar-fill{ height:100%; width:0%; background:var(--accent); transition:width .2s ease, background .2s ease; }
-  #ctx-bar-fill.warn{ background:#F5C36B; }
+  #ctx-bar-fill.warn{ background:var(--warn); }
   #ctx-bar-fill.danger{ background:var(--err); }
   #ctx-text{ white-space:nowrap; flex-shrink:0; }
 
@@ -161,6 +162,34 @@
   }
   .msg.user{ align-self:flex-end; background:var(--bg-bubble-user); color:var(--text-primary); border-bottom-right-radius:4px; }
   .msg.assistant{ align-self:flex-start; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-bottom-left-radius:4px; }
+
+  /* Per-message 삭제/재생성 actions. Absolutely positioned just below its
+     bubble so adding it never changes the bubble's own layout (the streaming
+     scroll math in app.js measures message heights). The visual offset from
+     the bubble is padding, not margin: the row only becomes clickable while
+     .msg is hovered, so any gap of dead space between the two would drop the
+     hover — and with it the row — before the cursor could reach a button. */
+  .msg.user, .msg.assistant{ position:relative; }
+  .msg-actions{
+    position:absolute; top:100%; padding-top:3px;
+    display:flex; gap:2px; z-index:5;
+    opacity:0; pointer-events:none; transition:opacity .12s;
+  }
+  .msg.user .msg-actions{ right:2px; }
+  .msg.assistant .msg-actions{ left:2px; }
+  .msg:hover > .msg-actions{ opacity:1; pointer-events:all; }
+  .msg-actions button{
+    background:var(--bg-sunken); border:1px solid var(--border); cursor:pointer;
+    color:var(--text-muted); padding:3px; border-radius:5px;
+    display:flex; align-items:center;
+    transition:color .15s, border-color .15s;
+  }
+  .msg-actions button svg{ width:11px; height:11px; }
+  .msg-actions button:hover{ color:var(--text-primary); border-color:var(--accent-dim); }
+  .msg-actions button.del:hover{ color:var(--err); border-color:var(--err); }
+  /* No mutating the transcript mid-generation — send()/regenerate own it. */
+  body.busy .msg-actions{ display:none; }
+
   .msg.note{ align-self:center; background:none; color:var(--text-muted); font-family:var(--mono); font-size:calc(10px * var(--font-scale)); white-space:pre-wrap; }
   .msg.usage{ align-self:center; background:none; color:var(--text-muted); font-family:var(--mono); font-size:calc(9.5px * var(--font-scale)); opacity:.75; padding:0 4px; }
 
@@ -327,6 +356,20 @@
   #bubble:hover{ transform:translateY(-2px); box-shadow:0 12px 28px rgba(0,0,0,.6); }
   #bubble.dragging{ cursor:grabbing; transform:none; transition:none; box-shadow:0 14px 32px rgba(0,0,0,.7); }
   #bubble svg{ width:21px; height:21px; stroke:var(--accent); fill:none; }
+  /* 도구 승인 대기 중 패널이 접혀 있으면 확인 카드가 보이지 않으므로, 버블이
+     대신 알린다. 상시 노란 글로우 + 퍼져나가는 링을 겹쳐 맥박의 저점에서도
+     "대기 중"이 계속 읽히게 한다. */
+  body:not(.panel-open) #bubble.awaiting{
+    border-color:var(--warn);
+    animation:bubble-awaiting 1.25s ease-out infinite;
+  }
+  @keyframes bubble-awaiting{
+    0%  { box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 16px 3px rgba(245,195,107,.8),  0 0 0 0 rgba(245,195,107,.9); }
+    70% { box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 16px 3px rgba(245,195,107,.35), 0 0 0 18px rgba(245,195,107,0); }
+    100%{ box-shadow:0 8px 24px rgba(0,0,0,.5), 0 0 16px 3px rgba(245,195,107,.8),  0 0 0 0 rgba(245,195,107,0); }
+  }
+  /* 상태 표시등도 대기색으로. 패널이 열려 있어 링을 띄우지 않을 때도 적용된다. */
+  #bubble.awaiting #dot{ background:var(--warn); animation:none; }
   #dot{
     position:absolute; top:5px; right:5px;
     width:8px; height:8px; border-radius:50%;

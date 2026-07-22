@@ -48,11 +48,17 @@ Each session's `messages` array is the literal OpenAI chat-message history (`rol
 
 ### Tool-calling loop
 
-Tools are workspace-scoped and read-only, defined in two places that must stay in sync:
+Tools are workspace-scoped, defined in two places that must stay in sync:
 - `TOOL_DEFS` in `app.js` — the OpenAI function-calling schema shown to the model, plus per-tool UI (label, enabled/always-allow settings).
 - `TOOL_IMPLS` in `main.js` — the actual implementation, run over IPC (`tool:run`), with every path argument resolved and bounds-checked against `workspaceRoot()` via `resolveInWorkspace()` (rejects `../` traversal and absolute paths outside the chosen workspace folder).
 
-`get_datetime` is the one exception: it needs no filesystem access, so `execTool()` in `app.js` answers it locally instead of going over IPC — don't assume every tool call crosses the IPC boundary.
+All of them are read-only except `write_file` and `run_command`, and that split drives the approval defaults: `TOOL_DEFAULTS` (mirrored in `app.js` and `settings.js`) overrides the usual `{enabled: true, alwaysAllow: true}` with `{false, false}` for `run_command` and `{true, false}` for `write_file`, so both always reach `confirmToolCall()`.
+
+`write_file` exists specifically so the model never builds a file through `run_command`: `exec()` on Windows runs `cmd.exe`, where `echo ... > f` writes the OEM code page (CP949 on this app's target locale) and mangles every non-ASCII character, and cmd's 8191-char command line truncates anything long. `run_command`'s own description in `TOOL_DEFS` carries the rest of the cmd.exe environment facts (no bash syntax, no PowerShell here-strings through `-Command`, exit code 9009 = command not found, 30s timeout) — local models otherwise default to assuming bash and burn whole conversations on shell syntax errors.
+
+One of those rules is enforced in code rather than left to the description: `run_command` rejects any command containing a newline. `cmd.exe /d /s /c` ends the command at the first newline, so a multi-line `python -c "…"` returns exit code 0 with empty stdout *and* empty stderr — a silent no-op that reports as success, which a model cannot diagnose and will retry indefinitely. Description rules can't cover a failure mode that produces no evidence, so the guard returns an error pointing at the `write_file` → script-file → run path instead.
+
+`get_datetime` is the one exception to the IPC path: it needs no filesystem access, so `execTool()` in `app.js` answers it locally instead of going over IPC — don't assume every tool call crosses the IPC boundary.
 
 `send()` in `app.js` drives a bounded loop (`MAX_TOOL_ROUNDS`) of `runCompletionRound()` → if the model emits `tool_calls`, `handleToolCalls()` executes each (subject to per-tool "always allow" vs. an inline approval prompt via `confirmToolCall()`) and appends `tool` role results, then loops back into another completion round. `stop()` (button, `Esc`, or denying a confirmation) aborts via `AbortController` at any point in this loop; partial assistant content is preserved rather than discarded (see `finalizeAbort`).
 

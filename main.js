@@ -72,6 +72,11 @@ ipcMain.handle('session:deleteLastMessage', (e, id) => {
   db.deleteLastMessage(id);
   broadcastChange(e.sender, { scope: 'session', id });
 });
+ipcMain.handle('session:replaceMessages', (e, id, messages) => {
+  const result = db.replaceMessages(id, messages);
+  broadcastChange(e.sender, { scope: 'session', id });
+  return result;
+});
 ipcMain.handle('session:setActive', (e, id) => {
   db.setActiveSession(id);
   broadcastChange(e.sender, { scope: 'settings' });
@@ -126,11 +131,13 @@ ipcMain.handle('skill:getFile', (_e, id, relPath) => {
 ipcMain.handle('db:path', () => db.dbPath());
 
 // ---- Workspace-scoped tools -------------------------------------------------
-// A small, read-only tool surface the local model can call (OpenAI-style
-// function calling). Every path argument is resolved against the configured
-// workspace root and rejected if it would escape that folder — this is a
-// background, always-on-top widget, so tools deliberately can't touch
-// anything outside the folder the user picked in Settings.
+// A small tool surface the local model can call (OpenAI-style function
+// calling). Every path argument is resolved against the configured workspace
+// root and rejected if it would escape that folder — this is a background,
+// always-on-top widget, so tools deliberately can't touch anything outside
+// the folder the user picked in Settings. All of them are read-only except
+// write_file and run_command, which is why those two carry stricter approval
+// defaults (see TOOL_DEFAULTS in app.js/settings.js).
 const SKIP_DIRS = new Set(['node_modules', '.git', '.hg', '.svn', 'dist', 'build', '.next', '.venv', '__pycache__']);
 const MAX_READ_CHARS = 100_000;
 const MAX_SCAN_ENTRIES = 20_000;
@@ -234,6 +241,32 @@ const TOOL_IMPLS = {
     return { ok: true, path: rel, content: text, truncated };
   },
 
+  // Exists mainly so the model never has to build a file through the shell.
+  // Under cmd.exe, `echo ... > f` writes the OEM code page (CP949 here), so
+  // every non-ASCII character in a generated file comes back mangled — the
+  // mirror image of the problem decodeCommandOutput() below handles on the
+  // read side — and a long file hits cmd's 8191-char command-line limit long
+  // before it's finished. Going through Node instead pins the file to UTF-8
+  // and has no length ceiling.
+  write_file(args) {
+    const root = workspaceRoot();
+    if (!root) return { ok: false, error: '워크스페이스 폴더가 설정되지 않았습니다.' };
+    const rel = String(args?.path || '');
+    if (!rel) return { ok: false, error: 'path가 필요합니다.' };
+    if (typeof args?.content !== 'string') return { ok: false, error: 'content가 필요합니다 (문자열).' };
+    let full;
+    try { full = resolveInWorkspace(root, rel); } catch (e) { return { ok: false, error: e.message }; }
+    try { fs.mkdirSync(path.dirname(full), { recursive: true }); } catch (e) { return { ok: false, error: '폴더 생성 실패: ' + e.message }; }
+    const append = args?.append === true;
+    try {
+      if (append) fs.appendFileSync(full, args.content, 'utf-8');
+      else fs.writeFileSync(full, args.content, 'utf-8');
+    } catch (e) { return { ok: false, error: '쓰기 실패: ' + e.message }; }
+    let bytes = null;
+    try { bytes = fs.statSync(full).size; } catch { /* stat is informational only */ }
+    return { ok: true, path: rel, appended: append, bytes };
+  },
+
   file_glob_search(args) {
     const root = workspaceRoot();
     if (!root) return { ok: false, error: '워크스페이스 폴더가 설정되지 않았습니다.' };
@@ -295,6 +328,21 @@ const TOOL_IMPLS = {
     if (!root) return { ok: false, error: '워크스페이스 폴더가 설정되지 않았습니다.' };
     const command = String(args?.command || '').trim();
     if (!command) return { ok: false, error: 'command가 필요합니다.' };
+    // A newline anywhere in the command is always a mistake here, and a
+    // uniquely undebuggable one: exec() runs `cmd.exe /d /s /c "<command>"`,
+    // where the first newline ends the command, so `python -c "` + newline +
+    // script resolves to exit code 0 with empty stdout AND empty stderr —
+    // indistinguishable from a command that ran and printed nothing. A model
+    // gets no signal at all and will happily "succeed" a dozen times in a row
+    // without producing the file it thinks it wrote. Nothing multi-line is
+    // valid under cmd.exe anyway, so rejecting outright loses nothing and
+    // turns a silent no-op into an actionable message.
+    if (/[\r\n]/.test(command)) {
+      return {
+        ok: false,
+        error: '여러 줄 명령은 실행할 수 없습니다 (cmd.exe는 첫 줄에서 명령을 끊기 때문에 아무 일도 일어나지 않은 채 성공으로 보고됩니다). 한 줄로 다시 쓰거나 — python -c "a; b; c" 처럼 세미콜론으로 잇거나 — 스크립트가 길면 write_file로 .py/.ps1 파일을 만든 뒤 그 파일을 실행하세요.'
+      };
+    }
     let cwd;
     try { cwd = resolveInWorkspace(root, args?.cwd || '.'); } catch (e) { return { ok: false, error: e.message }; }
 
