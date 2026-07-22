@@ -190,6 +190,23 @@ function walk(dir, budget, onFile) {
   }
 }
 
+// run_command's stdout/stderr: on Windows, cmd.exe and many console programs
+// write non-ASCII text in the OS's OEM/ANSI code page (e.g. CP949 on Korean
+// Windows), not UTF-8 — decoding that as UTF-8 (Node's default) silently
+// replaces every malformed multi-byte sequence with U+FFFD, which is exactly
+// the "mojibake" a model would otherwise see instead of the real message.
+// A genuine UTF-8 stream (increasingly the default even on Windows for
+// modern external tools — git, node, python, npm, ...) never produces U+FFFD
+// on its own, so its presence is a reliable signal to redecode the raw bytes
+// as Korean (this app's target locale) instead. 'euc-kr' is the WHATWG label
+// Node's built-in TextDecoder maps to the windows-949 codec (a superset of
+// true EUC-KR) — no extra dependency needed.
+function decodeCommandOutput(buf) {
+  const utf8 = buf.toString('utf8');
+  if (!utf8.includes('�')) return utf8;
+  try { return new TextDecoder('euc-kr').decode(buf); } catch { return utf8; }
+}
+
 const TOOL_IMPLS = {
   get_datetime() {
     const now = new Date();
@@ -278,10 +295,12 @@ const TOOL_IMPLS = {
     try { cwd = resolveInWorkspace(root, args?.cwd || '.'); } catch (e) { return { ok: false, error: e.message }; }
 
     return new Promise((resolve) => {
-      exec(command, { cwd, timeout: 30_000, maxBuffer: 10_000_000, windowsHide: true }, (error, stdout, stderr) => {
+      exec(command, { cwd, timeout: 30_000, maxBuffer: 10_000_000, windowsHide: true, encoding: 'buffer' }, (error, stdoutBuf, stderrBuf) => {
+        const stdout = decodeCommandOutput(stdoutBuf);
+        const stderr = decodeCommandOutput(stderrBuf);
         const truncate = (s) => (s.length <= MAX_READ_CHARS ? { text: s, truncated: false } : { text: s.slice(0, MAX_READ_CHARS), truncated: true });
-        const out = truncate(stdout || '');
-        const err = truncate(stderr || '');
+        const out = truncate(stdout);
+        const err = truncate(stderr);
         // A non-zero exit code still comes through as `error` from exec(), but
         // that's a normal command result the model should see (stdout/stderr/
         // exitCode), not a tool failure — only a spawn/timeout failure (no
